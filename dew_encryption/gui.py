@@ -1,25 +1,41 @@
 from __future__ import annotations
 
 import queue
+import subprocess
+import sys
 import threading
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from .core import DewError, archive_output_dir, commit_details, history, process, snapshot
+from .core import (
+    DewError,
+    commit_details,
+    create_archive_for_repo,
+    history,
+    process,
+    repo_for_source,
+    restore_commit,
+    snapshot,
+)
 
 
 class DewFileManager(tk.Tk):
-    def __init__(self) -> None:
+    def __init__(self, initial_paths: list[Path] | None = None, open_history: bool = False) -> None:
         super().__init__()
         self.title("Dew Encryption")
-        self.geometry("980x620")
-        self.minsize(820, 500)
+        self.geometry("1120x700")
+        self.minsize(940, 560)
         self.selected: list[Path] = []
         self.events: queue.Queue[str] = queue.Queue()
         self.watch_stop = threading.Event()
         self.watch_thread: threading.Thread | None = None
         self._build()
+        for path in initial_paths or []:
+            self._add(path)
+        if open_history:
+            self.notebook.select(self.history_tab)
+            self.refresh_history()
         self.after(100, self._drain_events)
 
     def _build(self) -> None:
@@ -57,19 +73,24 @@ class DewFileManager(tk.Tk):
         self.log.insert("end", "Select files or folders, then run Dew Encryption.\n")
         self.log.configure(state="disabled")
 
-        history_tab = ttk.Frame(self.notebook)
-        self.notebook.add(history_tab, text="History")
-        history_tab.columnconfigure(0, weight=1)
-        history_tab.columnconfigure(1, weight=1)
-        history_tab.rowconfigure(1, weight=1)
+        self.history_tab = ttk.Frame(self.notebook)
+        self.notebook.add(self.history_tab, text="History")
+        self.history_tab.columnconfigure(0, weight=1)
+        self.history_tab.columnconfigure(1, weight=1)
+        self.history_tab.rowconfigure(1, weight=1)
 
-        history_bar = ttk.Frame(history_tab, padding=(0, 0, 0, 10))
+        history_bar = ttk.Frame(self.history_tab, padding=(0, 0, 0, 10))
         history_bar.grid(row=0, column=0, columnspan=2, sticky="ew")
         ttk.Button(history_bar, text="Refresh History", command=self.refresh_history).pack(side="left", padx=(0, 8))
+        ttk.Button(history_bar, text="Snapshot Now", command=self.snapshot_now).pack(side="left", padx=(0, 8))
         ttk.Button(history_bar, text="Start Auto History", command=self.start_watch).pack(side="left", padx=(0, 8))
-        ttk.Button(history_bar, text="Stop Auto History", command=self.stop_watch).pack(side="left")
+        ttk.Button(history_bar, text="Stop Auto History", command=self.stop_watch).pack(side="left", padx=(0, 8))
+        ttk.Button(history_bar, text="Create Archive", command=self.create_archive).pack(side="left", padx=(0, 8))
+        ttk.Button(history_bar, text="Restore Selected", command=self.restore_selected).pack(side="left", padx=(0, 8))
+        ttk.Button(history_bar, text="Open Source", command=self.open_source).pack(side="left", padx=(0, 8))
+        ttk.Button(history_bar, text="Open Repo", command=self.open_repo).pack(side="left")
 
-        self.history_tree = ttk.Treeview(history_tab, columns=("commit", "date", "subject"), show="headings")
+        self.history_tree = ttk.Treeview(self.history_tab, columns=("commit", "date", "subject"), show="headings")
         self.history_tree.heading("commit", text="Commit")
         self.history_tree.heading("date", text="Date")
         self.history_tree.heading("subject", text="Subject")
@@ -79,7 +100,7 @@ class DewFileManager(tk.Tk):
         self.history_tree.grid(row=1, column=0, sticky="nsew", padx=(0, 10))
         self.history_tree.bind("<<TreeviewSelect>>", self.show_history_details)
 
-        self.details = tk.Text(history_tab, wrap="word")
+        self.details = tk.Text(self.history_tab, wrap="word")
         self.details.grid(row=1, column=1, sticky="nsew")
         self.details.insert("end", "Select a commit to view details and changed files.\n")
         self.details.configure(state="disabled")
@@ -130,6 +151,57 @@ class DewFileManager(tk.Tk):
     def stop_watch(self) -> None:
         self.watch_stop.set()
         self._log("Auto history stopped.")
+
+    def snapshot_now(self) -> None:
+        if not self.selected:
+            messagebox.showinfo("Dew Encryption", "Select a file history folder first.")
+            return
+        try:
+            result = snapshot([self.selected[0]])
+        except DewError as exc:
+            self._set_details(f"Snapshot failed: {exc}\n")
+            return
+        self._log(f"History snapshot: {result.commit}")
+        self.refresh_history()
+
+    def create_archive(self) -> None:
+        repo = self._active_repo()
+        if not repo:
+            messagebox.showinfo("Dew Encryption", "Select a file history folder first.")
+            return
+        try:
+            archive = create_archive_for_repo(repo)
+        except DewError as exc:
+            self._set_details(f"Archive failed: {exc}\n")
+            return
+        self._log(f"Archive created: {archive}")
+
+    def restore_selected(self) -> None:
+        repo = self._active_repo()
+        source = self._active_source()
+        selected = self.history_tree.selection()
+        if not repo or not source or not selected:
+            messagebox.showinfo("Dew Encryption", "Select a source folder and a history commit first.")
+            return
+        commit = selected[0]
+        if not messagebox.askyesno("Restore History", f"Restore {source} to commit {commit}? Current files at that path will be replaced."):
+            return
+        try:
+            restore_commit(repo, commit, source)
+        except DewError as exc:
+            self._set_details(f"Restore failed: {exc}\n")
+            return
+        self._log(f"Restored {source} to {commit}")
+
+    def open_source(self) -> None:
+        source = self._active_source()
+        if source:
+            subprocess.Popen(["explorer", str(source)])
+
+    def open_repo(self) -> None:
+        repo = self._active_repo()
+        if repo:
+            subprocess.Popen(["explorer", str(repo)])
 
     def refresh_history(self) -> None:
         for item in self.history_tree.get_children():
@@ -198,10 +270,15 @@ class DewFileManager(tk.Tk):
             self.watch_stop.wait(5.0)
 
     def _active_repo(self) -> Path | None:
+        source = self._active_source()
+        if not source:
+            return None
+        return repo_for_source(source)
+
+    def _active_source(self) -> Path | None:
         if not self.selected:
             return None
-        root = self.selected[0].resolve()
-        return archive_output_dir(root) / ".dew-encryption-repo"
+        return self.selected[0].resolve()
 
     def _set_details(self, text: str) -> None:
         self.details.configure(state="normal")
@@ -211,7 +288,9 @@ class DewFileManager(tk.Tk):
 
 
 def main() -> None:
-    app = DewFileManager()
+    open_history = "--history" in sys.argv[1:]
+    paths = [Path(arg) for arg in sys.argv[1:] if arg != "--history"]
+    app = DewFileManager(paths, open_history=open_history)
     app.mainloop()
 
 

@@ -6,7 +6,9 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -65,6 +67,20 @@ def run(cmd: list[str], cwd: Path | None = None) -> str:
     return proc.stdout.strip()
 
 
+def run_bytes(cmd: list[str], cwd: Path | None = None) -> bytes:
+    proc = subprocess.run(
+        cmd,
+        cwd=str(cwd) if cwd else None,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if proc.returncode != 0:
+        output = proc.stderr.decode(errors="replace")
+        raise DewError(f"Command failed ({proc.returncode}): {' '.join(cmd)}\n{output}")
+    return proc.stdout
+
+
 def selected_root(paths: list[Path]) -> Path:
     resolved = [p.resolve() for p in paths if p.exists()]
     if not resolved:
@@ -83,6 +99,10 @@ def archive_output_dir(source: Path) -> Path:
     out = base / ARCHIVE_DIR_NAME
     out.mkdir(parents=True, exist_ok=True)
     return out
+
+
+def repo_for_source(source: Path) -> Path:
+    return archive_output_dir(source.resolve()) / REPO_DIR_NAME
 
 
 def ensure_repo(repo: Path, git: Path) -> None:
@@ -147,7 +167,7 @@ def process(paths: list[Path], password: str | None = None) -> DewResult:
         ],
     )
     root = selected_root(paths)
-    repo = archive_output_dir(root) / REPO_DIR_NAME
+    repo = repo_for_source(root)
     ensure_repo(repo, git)
     copy_selection(paths, repo)
     commit = commit_repo(repo, git, f"dew snapshot {dt.datetime.now().isoformat(timespec='seconds')}")
@@ -158,7 +178,7 @@ def process(paths: list[Path], password: str | None = None) -> DewResult:
 def snapshot(paths: list[Path], label: str | None = None) -> DewResult:
     git = find_executable("git")
     root = selected_root(paths)
-    repo = archive_output_dir(root) / REPO_DIR_NAME
+    repo = repo_for_source(root)
     ensure_repo(repo, git)
     copy_selection(paths, repo)
     commit = commit_repo(repo, git, label or f"dew history {dt.datetime.now().isoformat(timespec='seconds')}")
@@ -191,6 +211,53 @@ def commit_details(repo: Path, commit: str) -> tuple[str, list[FileChange]]:
         if len(parts) == 2:
             changes.append(FileChange(parts[0], parts[1]))
     return message, changes
+
+
+def create_archive_for_repo(repo: Path, password: str | None = None) -> Path:
+    seven_zip = find_executable(
+        "7z",
+        [
+            Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "7-Zip" / "7z.exe",
+            Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)")) / "7-Zip" / "7z.exe",
+        ],
+    )
+    return compress_repo(repo, repo.parent, seven_zip, password=password)
+
+
+def restore_commit(repo: Path, commit: str, source: Path) -> None:
+    git = find_executable("git")
+    source = source.resolve()
+    repo_member = f"files/{source.name}"
+    archive = run_bytes([str(git), "archive", "--format=zip", commit, repo_member], cwd=repo)
+    with tempfile.TemporaryDirectory(prefix="dew-restore-") as temp_dir:
+        temp = Path(temp_dir)
+        zip_path = temp / "restore.zip"
+        zip_path.write_bytes(archive)
+        with zipfile.ZipFile(zip_path) as zf:
+            zf.extractall(temp)
+        restored = temp / repo_member
+        if not restored.exists():
+            raise DewError(f"Commit does not contain {repo_member}")
+        if restored.is_dir():
+            if source.exists() and source.is_file():
+                source.unlink()
+            source.mkdir(parents=True, exist_ok=True)
+            for child in source.iterdir():
+                if child.name == ARCHIVE_DIR_NAME:
+                    continue
+                if child.is_dir():
+                    shutil.rmtree(child)
+                else:
+                    child.unlink()
+            for child in restored.iterdir():
+                target = source / child.name
+                if child.is_dir():
+                    shutil.copytree(child, target)
+                else:
+                    shutil.copy2(child, target)
+        else:
+            source.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(restored, source)
 
 
 def watch(paths: list[Path], interval: float = 5.0, once: bool = False) -> None:
@@ -247,6 +314,20 @@ def main(argv: list[str] | None = None) -> int:
         except DewError as exc:
             print(f"dew encryption failed: {exc}", file=sys.stderr)
             return 1
+        return 0
+
+    if argv and argv[0] == "restore":
+        parser = argparse.ArgumentParser(prog="dew-encryption restore", description="Restore a file or folder from a history commit.")
+        parser.add_argument("repo", help="Path to .dew-encryption-repo.")
+        parser.add_argument("commit", help="Commit hash to restore.")
+        parser.add_argument("source", help="Original file or folder path to restore.")
+        args = parser.parse_args(argv[1:])
+        try:
+            restore_commit(Path(args.repo), args.commit, Path(args.source))
+        except DewError as exc:
+            print(f"dew encryption failed: {exc}", file=sys.stderr)
+            return 1
+        print(f"Restored {args.source} to {args.commit}")
         return 0
 
     parser = argparse.ArgumentParser(prog="dew-encryption", description="Commit selected files locally and compress them with 7-Zip.")

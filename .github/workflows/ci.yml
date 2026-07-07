@@ -46,6 +46,11 @@ jobs:
           }
           $commit = ($history -split "`n")[0].Split("`t")[0]
           python -m dew_encryption details (Join-Path $sample "Dew Encryption Archives\.dew-encryption-repo") $commit
+          $firstCommit = ($history -split "`n")[-1].Split("`t")[0]
+          python -m dew_encryption restore (Join-Path $sample "Dew Encryption Archives\.dew-encryption-repo") $firstCommit $sample
+          if ((Get-Content (Join-Path $sample "notes.txt") -Raw).Trim() -ne "ci sample") {
+            throw "Restore did not return the folder to the first commit."
+          }
           if (-not (Get-ChildItem (Join-Path $sample "Dew Encryption Archives") -Filter *.7z)) {
             throw "No archive was produced."
           }

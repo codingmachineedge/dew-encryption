@@ -63,6 +63,13 @@ Each run creates or updates:
 - `Dew Encryption Archives\.dew-encryption-repo`
 - `Dew Encryption Archives\dew-encryption-YYYYMMDD-HHMMSS.7z`
 
+Folders also get file-history actions in the normal Explorer menu:
+
+- `dew encryption start file history` creates the local history repo and starts a hidden watcher that commits detected folder changes.
+- `dew encryption file history manager` opens the detailed manager directly for that folder.
+
+These entries are installed without administrator rights and do not require holding Shift.
+
 ## Use The GUI
 
 ```powershell
@@ -76,6 +83,17 @@ python -m dew_encryption.gui
 ```
 
 The GUI includes a `History` tab. Select a file or folder, refresh history, and choose a commit to see commit metadata and changed files.
+
+History manager actions:
+
+- `Refresh History` reloads commits from the local repo.
+- `Snapshot Now` commits the current selected folder state.
+- `Start Auto History` watches for changes and commits them automatically.
+- `Stop Auto History` stops the GUI watcher.
+- `Create Archive` compresses the local history repo with 7-Zip.
+- `Restore Selected` restores the selected file or folder to the chosen commit.
+- `Open Source` opens the selected folder in Explorer.
+- `Open Repo` opens the local `.dew-encryption-repo` folder.
 
 ## Automatic File History
 
@@ -97,6 +115,12 @@ To inspect a specific commit:
 
 ```powershell
 dew-encryption details "C:\Path\To\Folder\Dew Encryption Archives\.dew-encryption-repo" abc1234
+```
+
+To restore a file or folder to a specific commit:
+
+```powershell
+dew-encryption restore "C:\Path\To\Folder\Dew Encryption Archives\.dew-encryption-repo" abc1234 C:\Path\To\Folder
 ```
 
 ## Optional Encrypted Archive
