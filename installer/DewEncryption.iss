@@ -105,6 +105,18 @@ Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\dew-encryption-
 Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\dew-encryption-remove-elevated-tasks"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\icons\dew-main.ico"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\dew-encryption-remove-elevated-tasks\command"; ValueType: string; ValueName: ""; ValueData: "powershell -NoProfile -ExecutionPolicy Bypass -File ""{app}\installer\launch-remove-elevated-tasks.ps1"""; Flags: uninsdeletekey
 
+Root: HKCU; Subkey: "Software\Classes\*\shell\dew-encryption-dew-drive-add"; ValueType: string; ValueName: "MUIVerb"; ValueData: "dew encryption add to Dew Drive"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\*\shell\dew-encryption-dew-drive-add"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\icons\dew-archive.ico"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\*\shell\dew-encryption-dew-drive-add\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" dew-drive add ""%1"""; Flags: uninsdeletekey
+
+Root: HKCU; Subkey: "Software\Classes\Directory\shell\dew-encryption-dew-drive-add"; ValueType: string; ValueName: "MUIVerb"; ValueData: "dew encryption add to Dew Drive"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\Directory\shell\dew-encryption-dew-drive-add"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\icons\dew-archive.ico"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\Directory\shell\dew-encryption-dew-drive-add\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" dew-drive add ""%1"""; Flags: uninsdeletekey
+
+Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\dew-encryption-dew-drive-sync"; ValueType: string; ValueName: "MUIVerb"; ValueData: "dew encryption sync Dew Drive"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\dew-encryption-dew-drive-sync"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\icons\dew-archive.ico"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\dew-encryption-dew-drive-sync\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" dew-drive sync --push"; Flags: uninsdeletekey
+
 [Code]
 function CommandExists(Name: String): Boolean;
 var
