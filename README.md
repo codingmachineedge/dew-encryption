@@ -19,6 +19,16 @@ It also includes a simple GUI file manager for selecting files and running the s
 
 ## Install
 
+Fully automated install, including dependencies when `winget` is available:
+
+```powershell
+irm https://raw.githubusercontent.com/codingmachineedge/dew-encryption/main/installer/install.ps1 | iex
+```
+
+That command installs or verifies Python, Git, and 7-Zip, clones this repo into `%LOCALAPPDATA%\DewEncryption`, installs the Python package, and registers the Explorer context menu.
+
+Manual install:
+
 ```powershell
 git clone https://github.com/codingmachineedge/dew-encryption.git
 cd dew-encryption
@@ -27,6 +37,20 @@ powershell -ExecutionPolicy Bypass -File .\installer\install-context-menu.ps1
 ```
 
 The installer writes only to `HKCU`, so it does not require administrator rights. The menu entry is registered for files, folders, and folder background right-clicks, and it does not require holding Shift.
+
+## GitHub Pages
+
+Project page:
+
+https://codingmachineedge.github.io/dew-encryption/
+
+The page is deployed by `.github/workflows/pages.yml` from the `docs/` folder.
+
+## GitHub Actions
+
+- `.github/workflows/ci.yml` compiles the package, parses installer scripts, installs 7-Zip, and runs a real snapshot smoke test on Windows.
+- `.github/workflows/release.yml` builds a zip bundle on tag pushes like `v0.1.0` or manual workflow runs.
+- `.github/workflows/pages.yml` deploys `docs/` to GitHub Pages.
 
 ## Use From Explorer
 

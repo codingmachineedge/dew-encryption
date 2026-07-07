@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Dew Encryption</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17212b;
+      --muted: #52616f;
+      --line: #c9d3de;
+      --accent: #145f8f;
+      --panel: #f5f8fb;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Arial, sans-serif;
+      color: var(--ink);
+      background: #ffffff;
+      line-height: 1.5;
+    }
+    header, main { max-width: 1040px; margin: 0 auto; padding: 28px; }
+    header { padding-top: 44px; }
+    h1 { margin: 0 0 10px; font-size: 42px; letter-spacing: 0; }
+    p { color: var(--muted); font-size: 17px; }
+    .install {
+      display: block;
+      width: 100%;
+      padding: 18px;
+      border: 1px solid var(--line);
+      background: #101820;
+      color: #e6f0f8;
+      overflow-x: auto;
+      font: 14px Consolas, monospace;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 18px;
+      margin: 24px 0;
+    }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 18px;
+      background: var(--panel);
+    }
+    .card h2 { margin: 0 0 8px; font-size: 19px; }
+    img {
+      width: 100%;
+      border: 1px solid var(--line);
+      margin-top: 18px;
+      background: #fff;
+    }
+    a { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Dew Encryption</h1>
+    <p>Windows Explorer right-click snapshots that commit selected files into a local Git repository and compress the repository with 7-Zip.</p>
+    <pre class="install">irm https://raw.githubusercontent.com/codingmachineedge/dew-encryption/main/installer/install.ps1 | iex</pre>
+  </header>
+  <main>
+    <section class="grid">
+      <article class="card">
+        <h2>Automated install</h2>
+        <p>The installer can bootstrap Python, Git, and 7-Zip with winget, clone the repo, install the package, and register the Explorer context menu under HKCU.</p>
+      </article>
+      <article class="card">
+        <h2>Explorer first</h2>
+        <p>Right-click a file or folder and choose <strong>dew encryption</strong>. No Shift modifier is required.</p>
+      </article>
+      <article class="card">
+        <h2>GUI included</h2>
+        <p>Run <code>dew-encryption-gui</code> to open the file manager and start the same snapshot workflow manually.</p>
+      </article>
+    </section>
+    <h2>Screenshots</h2>
+    <img src="screenshots/gui.svg" alt="Dew Encryption GUI screenshot">
+    <img src="screenshots/explorer-menu.svg" alt="Explorer context menu screenshot">
+    <p><a href="https://github.com/codingmachineedge/dew-encryption">View the GitHub repository</a></p>
+  </main>
+</body>
+</html>

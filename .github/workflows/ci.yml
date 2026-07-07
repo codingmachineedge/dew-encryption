@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          choco install 7zip -y
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+      - name: Compile package
+        run: python -m compileall dew_encryption
+      - name: Parse installer scripts
+        shell: pwsh
+        run: |
+          $err = $null
+          [System.Management.Automation.PSParser]::Tokenize((Get-Content .\installer\install.ps1 -Raw), [ref]$err) | Out-Null
+          if ($err) { throw $err }
+          [System.Management.Automation.PSParser]::Tokenize((Get-Content .\installer\install-context-menu.ps1 -Raw), [ref]$err) | Out-Null
+          if ($err) { throw $err }
+          [System.Management.Automation.PSParser]::Tokenize((Get-Content .\installer\uninstall-context-menu.ps1 -Raw), [ref]$err) | Out-Null
+          if ($err) { throw $err }
+      - name: Smoke test snapshot
+        shell: pwsh
+        run: |
+          $sample = Join-Path $env:TEMP "dew-ci-sample"
+          Remove-Item $sample -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Path $sample | Out-Null
+          Set-Content -Path (Join-Path $sample "notes.txt") -Value "ci sample"
+          python -m dew_encryption $sample
+          if (-not (Get-ChildItem (Join-Path $sample "Dew Encryption Archives") -Filter *.7z)) {
+            throw "No archive was produced."
+          }
