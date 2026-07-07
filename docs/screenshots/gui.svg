@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="760" viewBox="0 0 1280 760">
+  <rect width="1280" height="760" fill="#f4f6f8"/>
+  <rect x="120" y="76" width="1040" height="608" fill="#ffffff" stroke="#9aa7b4"/>
+  <rect x="120" y="76" width="1040" height="42" fill="#263238"/>
+  <text x="144" y="103" font-family="Segoe UI, Arial" font-size="17" fill="#ffffff">Dew Encryption</text>
+  <rect x="144" y="144" width="124" height="34" rx="4" fill="#edf2f7" stroke="#9aa7b4"/>
+  <text x="174" y="166" font-family="Segoe UI, Arial" font-size="14" fill="#15202b">Add Files</text>
+  <rect x="280" y="144" width="132" height="34" rx="4" fill="#edf2f7" stroke="#9aa7b4"/>
+  <text x="307" y="166" font-family="Segoe UI, Arial" font-size="14" fill="#15202b">Add Folder</text>
+  <rect x="424" y="144" width="104" height="34" rx="4" fill="#edf2f7" stroke="#9aa7b4"/>
+  <text x="452" y="166" font-family="Segoe UI, Arial" font-size="14" fill="#15202b">Remove</text>
+  <rect x="950" y="144" width="186" height="34" rx="4" fill="#1b6ca8"/>
+  <text x="982" y="166" font-family="Segoe UI, Arial" font-size="14" fill="#ffffff">Run Dew Encryption</text>
+  <rect x="144" y="202" width="992" height="330" fill="#ffffff" stroke="#bcc7d1"/>
+  <rect x="144" y="202" width="992" height="36" fill="#edf2f7"/>
+  <line x1="944" y1="202" x2="944" y2="532" stroke="#bcc7d1"/>
+  <text x="164" y="225" font-family="Segoe UI, Arial" font-size="14" fill="#15202b">Path</text>
+  <text x="982" y="225" font-family="Segoe UI, Arial" font-size="14" fill="#15202b">Type</text>
+  <text x="164" y="274" font-family="Consolas, monospace" font-size="14" fill="#24313d">C:\Users\Public\Documents\Project</text>
+  <text x="988" y="274" font-family="Segoe UI, Arial" font-size="14" fill="#24313d">Folder</text>
+  <text x="164" y="312" font-family="Consolas, monospace" font-size="14" fill="#24313d">C:\Users\Public\Documents\notes.txt</text>
+  <text x="988" y="312" font-family="Segoe UI, Arial" font-size="14" fill="#24313d">File</text>
+  <rect x="144" y="552" width="992" height="102" fill="#101820"/>
+  <text x="164" y="584" font-family="Consolas, monospace" font-size="14" fill="#d6e4f0">Starting Dew Encryption job...</text>
+  <text x="164" y="614" font-family="Consolas, monospace" font-size="14" fill="#d6e4f0">Archive: C:\Users\Public\Documents\Dew Encryption Archives\dew-encryption-20260707-141500.7z</text>
+  <text x="164" y="644" font-family="Consolas, monospace" font-size="14" fill="#d6e4f0">Commit: 8f31a2c</text>
+</svg>

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="620" viewBox="0 0 900 620">
+  <rect width="900" height="620" fill="#e9edf2"/>
+  <rect x="90" y="70" width="720" height="460" fill="#ffffff" stroke="#aeb8c2"/>
+  <rect x="90" y="70" width="720" height="44" fill="#f7f9fb"/>
+  <text x="112" y="98" font-family="Segoe UI, Arial" font-size="16" fill="#1f2a33">Documents</text>
+  <rect x="124" y="150" width="176" height="36" fill="#dcebff"/>
+  <text x="156" y="173" font-family="Segoe UI, Arial" font-size="15" fill="#1f2a33">Project Folder</text>
+  <rect x="292" y="176" width="250" height="338" fill="#ffffff" stroke="#8995a1"/>
+  <text x="318" y="216" font-family="Segoe UI, Arial" font-size="15" fill="#1f2a33">Open</text>
+  <text x="318" y="254" font-family="Segoe UI, Arial" font-size="15" fill="#1f2a33">Open in Terminal</text>
+  <line x1="292" y1="276" x2="542" y2="276" stroke="#d7dee5"/>
+  <rect x="300" y="296" width="234" height="34" fill="#e8f2ff"/>
+  <text x="318" y="318" font-family="Segoe UI, Arial" font-size="15" fill="#0f3557">dew encryption</text>
+  <line x1="292" y1="350" x2="542" y2="350" stroke="#d7dee5"/>
+  <text x="318" y="388" font-family="Segoe UI, Arial" font-size="15" fill="#1f2a33">Copy as path</text>
+  <text x="318" y="426" font-family="Segoe UI, Arial" font-size="15" fill="#1f2a33">Properties</text>
+</svg>
