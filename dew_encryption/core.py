@@ -65,6 +65,12 @@ class FileChange:
     path: str
 
 
+
+
+@dataclass
+class DewDriveProfile:
+    registry_ref: str
+
 @dataclass
 class VeraCryptSettings:
     encryption: str = "AES"
@@ -187,6 +193,73 @@ def find_veracrypt() -> Path:
         if candidate.exists():
             return candidate
     raise DewError("VeraCrypt was not found. Install VeraCrypt and make sure its CLI is available.")
+
+
+
+
+def find_docker() -> Path:
+    docker = shutil.which("docker")
+    if docker:
+        return Path(docker)
+    fallbacks = [
+        Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "Docker" / "Docker" / "resources" / "bin" / "docker.exe",
+        Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "Docker" / "Docker" / "resources" / "docker.exe",
+        Path("/usr/bin/docker"),
+        Path("/usr/local/bin/docker"),
+    ]
+    for candidate in fallbacks:
+        if candidate.exists():
+            return candidate
+    raise DewError("Docker was not found. Install Docker and make sure its CLI is available.")
+
+
+def run_docker(args: list[str]) -> str:
+    return run([str(find_docker()), *args])
+
+
+def dew_drive_image_ref(profile: DewDriveProfile) -> str:
+    registry_ref = profile.registry_ref.strip()
+    if not registry_ref:
+        raise DewError("Dew Drive registry reference is empty.")
+    return registry_ref
+
+
+def build_dew_drive_image(profile: DewDriveProfile, encrypted_payload: Path, metadata: dict[str, object]) -> str:
+    registry_ref = dew_drive_image_ref(profile)
+    encrypted_payload = Path(encrypted_payload).expanduser().resolve()
+    if not encrypted_payload.exists():
+        raise DewError(f"Encrypted payload does not exist: {encrypted_payload}")
+    with tempfile.TemporaryDirectory(prefix="dew-drive-build-") as temp_dir:
+        context = Path(temp_dir)
+        dew_drive = context / "dew-drive"
+        dew_drive.mkdir(parents=True, exist_ok=True)
+        payload_target = dew_drive / encrypted_payload.name
+        if encrypted_payload.is_dir():
+            shutil.copytree(encrypted_payload, payload_target)
+        else:
+            shutil.copy2(encrypted_payload, payload_target)
+        (dew_drive / "metadata.json").write_text(json.dumps(metadata, indent=2, sort_keys=True), encoding="utf-8")
+        (context / "Dockerfile").write_text("FROM scratch\nCOPY dew-drive /dew-drive\n", encoding="utf-8")
+        return run_docker(["build", "-t", registry_ref, str(context)])
+
+
+def push_dew_drive(profile: DewDriveProfile) -> str:
+    return run_docker(["push", dew_drive_image_ref(profile)])
+
+
+def pull_dew_drive(registry_ref: str, output_dir: Path) -> Path:
+    registry_ref = registry_ref.strip()
+    if not registry_ref:
+        raise DewError("Dew Drive registry reference is empty.")
+    output_dir = Path(output_dir).expanduser().resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    run_docker(["pull", registry_ref])
+    container = run_docker(["create", registry_ref])
+    try:
+        run_docker(["cp", f"{container}:/dew-drive", str(output_dir)])
+    finally:
+        run_docker(["rm", container])
+    return output_dir / "dew-drive"
 
 
 def run(cmd: list[str], cwd: Path | None = None) -> str:
