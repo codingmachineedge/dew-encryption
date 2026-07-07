@@ -12,6 +12,8 @@ $WatchCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Se
 $WatchBackgroundCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; Start-Process -WindowStyle Hidden -FilePath '$EscapedPython' -ArgumentList @('-m','dew_encryption','watch','%V') }`""
 $ManagerCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption.gui '%1' --history }`""
 $ManagerBackgroundCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption.gui '%V' --history }`""
+$QuickCreateCommand = "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption container-quick-create '%1' %*; Read-Host 'Press Enter to close' }`""
+$QuickCreateFolderCommand = $QuickCreateCommand
 $VeraCryptEncryptCommand = "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption veracrypt-encrypt '%1' %*; Read-Host 'Press Enter to close' }`""
 $VeraCryptFolderEncryptCommand = "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption veracrypt-encrypt '%1' %*; Read-Host 'Press Enter to close' }`""
 $VeraCryptDecryptCommand = "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption veracrypt-decrypt '%1' %*; Read-Host 'Press Enter to close' }`""
@@ -26,6 +28,8 @@ $keys = @(
     @{ Path = "HKCU:\Software\Classes\Directory\Background\shell\dew-encryption-watch"; Verb = "dew encryption start file history"; Command = $WatchBackgroundCommand },
     @{ Path = "HKCU:\Software\Classes\Directory\shell\dew-encryption-manager"; Verb = "dew encryption file history manager"; Command = $ManagerCommand },
     @{ Path = "HKCU:\Software\Classes\Directory\Background\shell\dew-encryption-manager"; Verb = "dew encryption file history manager"; Command = $ManagerBackgroundCommand },
+    @{ Path = "HKCU:\Software\Classes\*\shell\dew-encryption-quick-create"; Verb = "dew encryption quick create container"; Command = $QuickCreateCommand },
+    @{ Path = "HKCU:\Software\Classes\Directory\shell\dew-encryption-quick-create"; Verb = "dew encryption quick create container"; Command = $QuickCreateFolderCommand },
     @{ Path = "HKCU:\Software\Classes\*\shell\dew-encryption-veracrypt-encrypt"; Verb = "dew encryption VeraCrypt encrypt"; Command = $VeraCryptEncryptCommand },
     @{ Path = "HKCU:\Software\Classes\Directory\shell\dew-encryption-veracrypt-encrypt"; Verb = "dew encryption VeraCrypt encrypt"; Command = $VeraCryptFolderEncryptCommand },
     @{ Path = "HKCU:\Software\Classes\.hc\shell\dew-encryption-veracrypt-decrypt"; Verb = "dew encryption VeraCrypt decrypt"; Command = $VeraCryptDecryptCommand },
@@ -36,7 +40,7 @@ $keys = @(
 foreach ($item in $keys) {
     New-Item -Path $item.Path -Force | Out-Null
     New-ItemProperty -Path $item.Path -Name "MUIVerb" -Value $item.Verb -PropertyType String -Force | Out-Null
-    if ($item.Path -like "*veracrypt*") {
+    if ($item.Path -like "*veracrypt*" -or $item.Path -like "*quick-create*") {
         New-ItemProperty -Path $item.Path -Name "MultiSelectModel" -Value "Player" -PropertyType String -Force | Out-Null
     }
     $icon = "imageres.dll,-102"
@@ -44,6 +48,8 @@ foreach ($item in $keys) {
         $icon = Join-Path $ProjectRoot "assets\icons\dew-watch.ico"
     } elseif ($item.Path -like "*dew-encryption-manager") {
         $icon = Join-Path $ProjectRoot "assets\icons\dew-history.ico"
+    } elseif ($item.Path -like "*quick-create*") {
+        $icon = Join-Path $ProjectRoot "assets\icons\dew-veracrypt-encrypt.ico"
     } elseif ($item.Path -like "*veracrypt-encrypt") {
         $icon = Join-Path $ProjectRoot "assets\icons\dew-veracrypt-encrypt.ico"
     } elseif ($item.Path -like "*veracrypt-decrypt") {

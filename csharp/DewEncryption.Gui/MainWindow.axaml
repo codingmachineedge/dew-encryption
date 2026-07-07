@@ -1,0 +1,78 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="DewEncryption.Gui.MainWindow"
+        Title="Dew Encryption"
+        Width="1180"
+        Height="760"
+        MinWidth="940"
+        MinHeight="600">
+  <Grid RowDefinitions="Auto,*" Margin="16" RowSpacing="12">
+    <Border Grid.Row="0" CornerRadius="14" Padding="18" Background="#102033">
+      <DockPanel>
+        <StackPanel DockPanel.Dock="Left">
+          <TextBlock Text="Dew Encryption" Foreground="White" FontSize="24" FontWeight="Bold" />
+          <TextBlock Text="C# cross-platform GUI shell for files, history, containers, themes, and hooks." Foreground="#D9ECFB" />
+        </StackPanel>
+        <Button DockPanel.Dock="Right" Content="Open CLI Help" Click="OpenHelp_Click" />
+      </DockPanel>
+    </Border>
+
+    <TabControl Grid.Row="1">
+      <TabItem Header="Files">
+        <Grid RowDefinitions="Auto,*,Auto" RowSpacing="10" Margin="0,10,0,0">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Content="Add files" Click="AddFiles_Click" />
+            <Button Content="Add folder" Click="AddFolder_Click" />
+            <Button Content="Remove selected" Click="RemoveSelected_Click" />
+            <Button Content="Run Dew Encryption" Classes="accent" Click="RunSelected_Click" />
+          </StackPanel>
+          <DataGrid x:Name="FilesGrid" Grid.Row="1" AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Extended">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="Path" Binding="{Binding Path}" Width="*" />
+              <DataGridTextColumn Header="Type" Binding="{Binding Kind}" Width="120" />
+            </DataGrid.Columns>
+          </DataGrid>
+          <TextBox x:Name="LogBox" Grid.Row="2" Height="120" AcceptsReturn="True" IsReadOnly="True" TextWrapping="Wrap" />
+        </Grid>
+      </TabItem>
+
+      <TabItem Header="History">
+        <Grid RowDefinitions="Auto,*" RowSpacing="10" Margin="0,10,0,0">
+          <StackPanel Orientation="Horizontal" Spacing="8">
+            <Button Content="Refresh history" Click="RefreshHistory_Click" />
+            <Button Content="Snapshot now" Click="SnapshotHistory_Click" />
+            <Button Content="Open Python history manager" Click="OpenPythonHistoryGui_Click" />
+          </StackPanel>
+          <TextBlock Grid.Row="1" TextWrapping="Wrap" Text="Select a file or folder on the Files tab, then refresh or snapshot its Git-backed history. Detailed commit browsing remains delegated to the stable dew-encryption CLI while this C# GUI shell is developed." />
+        </Grid>
+      </TabItem>
+
+      <TabItem Header="Containers">
+        <Grid ColumnDefinitions="320,*" RowDefinitions="Auto,*" ColumnSpacing="12" RowSpacing="10" Margin="0,10,0,0">
+          <TextBlock Grid.ColumnSpan="2" Text="Manage encrypted containers, custom themes, open/close scripts, Discord webhooks, Home Assistant webhooks, and Git-backed container file history." TextWrapping="Wrap" />
+          <ListBox x:Name="ContainersList" Grid.Row="1" />
+          <Grid Grid.Row="1" Grid.Column="1" RowDefinitions="Auto,Auto,Auto,*" RowSpacing="10">
+            <UniformGrid Columns="2" Rows="4">
+              <TextBox Watermark="Container name" x:Name="ContainerNameBox" />
+              <TextBox Watermark="Container path" x:Name="ContainerPathBox" />
+              <TextBox Watermark="Mount path" x:Name="MountPathBox" />
+              <TextBox Watermark="Font family" x:Name="FontFamilyBox" Text="Segoe UI" />
+              <TextBox Watermark="Background color" x:Name="BackgroundBox" Text="#0f172a" />
+              <TextBox Watermark="Foreground color" x:Name="ForegroundBox" Text="#e5e7eb" />
+              <TextBox Watermark="Accent color" x:Name="AccentBox" Text="#38bdf8" />
+              <TextBox Watermark="Font size" x:Name="FontSizeBox" Text="10" />
+            </UniformGrid>
+            <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8">
+              <Button Content="Register container" Click="RegisterContainer_Click" />
+              <Button Content="Snapshot history" Click="SnapshotContainer_Click" />
+              <Button Content="Test open hooks" Click="TestOpenHooks_Click" />
+              <Button Content="Test close hooks" Click="TestCloseHooks_Click" />
+            </StackPanel>
+            <TextBox Grid.Row="2" x:Name="HookBox" Height="84" AcceptsReturn="True" Watermark="Hook notes, webhook URLs, or scripts to mirror into the Python manager" />
+            <TextBlock Grid.Row="3" TextWrapping="Wrap" Text="This C# Avalonia interface is a native cross-platform shell that drives the existing dew-encryption CLI. Use it as the new GUI target while retaining the mature Python core for encryption, history, and hook execution." />
+          </Grid>
+        </Grid>
+      </TabItem>
+    </TabControl>
+  </Grid>
+</Window>

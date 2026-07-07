@@ -11,6 +11,8 @@ import sys
 import tempfile
 import time
 import zipfile
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from dataclasses import asdict
 from pathlib import Path
@@ -78,12 +80,41 @@ class VeraCryptSettings:
 
 
 @dataclass
+class ThemeSettings:
+    background: str = "#0f172a"
+    foreground: str = "#e5e7eb"
+    accent: str = "#38bdf8"
+    font_family: str = "Segoe UI"
+    font_size: int = 10
+
+
+@dataclass
+class HookAction:
+    name: str = "New action"
+    event: str = "open"
+    kind: str = "script"
+    target: str = ""
+    payload: str = ""
+    enabled: bool = True
+
+
+@dataclass
+class ContainerProfile:
+    name: str = "Default"
+    path: str = ""
+    mount_path: str = ""
+    theme: ThemeSettings | None = None
+    hooks: list[HookAction] | None = None
+
+
+@dataclass
 class AppSettings:
     veracrypt: VeraCryptSettings
+    containers: list[ContainerProfile] | None = None
 
 
 def default_settings() -> AppSettings:
-    return AppSettings(veracrypt=VeraCryptSettings())
+    return AppSettings(veracrypt=VeraCryptSettings(), containers=[])
 
 
 def load_settings() -> AppSettings:
@@ -98,7 +129,27 @@ def load_settings() -> AppSettings:
     defaults = VeraCryptSettings()
     values = asdict(defaults)
     values.update({key: value for key, value in vc_raw.items() if key in values})
-    return AppSettings(veracrypt=VeraCryptSettings(**values))
+    profiles: list[ContainerProfile] = []
+    for profile_raw in raw.get("containers", []) if isinstance(raw, dict) else []:
+        if not isinstance(profile_raw, dict):
+            continue
+        theme_raw = profile_raw.get("theme") if isinstance(profile_raw.get("theme"), dict) else {}
+        theme_values = asdict(ThemeSettings())
+        theme_values.update({key: value for key, value in theme_raw.items() if key in theme_values})
+        hooks: list[HookAction] = []
+        for hook_raw in profile_raw.get("hooks", []):
+            if isinstance(hook_raw, dict):
+                hook_values = asdict(HookAction())
+                hook_values.update({key: value for key, value in hook_raw.items() if key in hook_values})
+                hooks.append(HookAction(**hook_values))
+        profiles.append(ContainerProfile(
+            name=str(profile_raw.get("name") or "Default"),
+            path=str(profile_raw.get("path") or ""),
+            mount_path=str(profile_raw.get("mount_path") or ""),
+            theme=ThemeSettings(**theme_values),
+            hooks=hooks,
+        ))
+    return AppSettings(veracrypt=VeraCryptSettings(**values), containers=profiles)
 
 
 def save_settings(settings: AppSettings) -> None:
@@ -522,6 +573,94 @@ def veracrypt_decrypt_container(
     return output
 
 
+
+
+def container_history_repo(container: Path) -> Path:
+    container = container.resolve()
+    out = container.parent / ARCHIVE_DIR_NAME / "Container History" / container.stem
+    out.mkdir(parents=True, exist_ok=True)
+    return out / REPO_DIR_NAME
+
+
+def snapshot_container(container: Path, label: str | None = None) -> DewResult:
+    container = container.resolve()
+    if not container.exists():
+        raise DewError(f"Container does not exist: {container}")
+    git = find_executable("git")
+    repo = container_history_repo(container)
+    ensure_repo(repo, git)
+    copy_selection([container], repo)
+    commit = commit_repo(repo, git, label or f"dew container history {dt.datetime.now().isoformat(timespec='seconds')}")
+    return DewResult(source=container, repo=repo, archive=Path(), commit=commit)
+
+
+def container_history(container: Path, limit: int = 100) -> list[HistoryEntry]:
+    return history(container_history_repo(container), limit=limit)
+
+def hook_variables(container: Path, mount_path: Path | None = None, event: str = "open") -> dict[str, str]:
+    now = dt.datetime.now().isoformat(timespec="seconds")
+    return {
+        "event": event,
+        "container": str(container),
+        "container_name": container.name,
+        "container_stem": container.stem,
+        "mount_path": str(mount_path or ""),
+        "user": getpass.getuser(),
+        "host": os.environ.get("COMPUTERNAME") or os.environ.get("HOSTNAME") or "",
+        "timestamp": now,
+    }
+
+
+def expand_hook_text(text: str, variables: dict[str, str]) -> str:
+    result = text
+    for key, value in variables.items():
+        result = result.replace("{" + key + "}", value)
+    return result
+
+
+def run_container_hooks(profile: ContainerProfile | None, event: str, container: Path, mount_path: Path | None = None) -> list[str]:
+    if not profile:
+        return []
+    variables = hook_variables(container, mount_path, event)
+    messages: list[str] = []
+    for hook in profile.hooks or []:
+        if not hook.enabled or hook.event != event:
+            continue
+        target = expand_hook_text(hook.target, variables)
+        payload = expand_hook_text(hook.payload, variables)
+        try:
+            if hook.kind == "script":
+                if not target:
+                    raise DewError("script hook target is empty")
+                env = os.environ.copy()
+                env.update({f"DEW_{key.upper()}": value for key, value in variables.items()})
+                completed = subprocess.run(target, shell=True, text=True, input=payload or None, env=env, check=False)
+                if completed.returncode != 0:
+                    raise DewError(f"script exited with {completed.returncode}")
+            elif hook.kind in {"discord", "home_assistant"}:
+                if not target:
+                    raise DewError("webhook URL is empty")
+                body = payload or json.dumps({"content" if hook.kind == "discord" else "event": f"Dew container {event}: {container.name}"})
+                data = body.encode("utf-8")
+                req = urllib.request.Request(target, data=data, method="POST")
+                req.add_header("Content-Type", "application/json")
+                with urllib.request.urlopen(req, timeout=15) as response:
+                    response.read()
+            else:
+                raise DewError(f"unknown hook kind: {hook.kind}")
+            messages.append(f"{event} hook succeeded: {hook.name}")
+        except (OSError, urllib.error.URLError, DewError) as exc:
+            messages.append(f"{event} hook failed ({hook.name}): {exc}")
+    return messages
+
+
+def find_container_profile(container: Path) -> ContainerProfile | None:
+    container = container.resolve()
+    for profile in load_settings().containers or []:
+        if profile.path and Path(profile.path).expanduser().resolve() == container:
+            return profile
+    return None
+
 def watch(paths: list[Path], interval: float = 5.0, once: bool = False) -> None:
     last_commit = ""
     while True:
@@ -648,6 +787,60 @@ def main(argv: list[str] | None = None) -> int:
             return 1
         for output in outputs:
             print(f"Decrypted to: {output}")
+        return 0
+
+
+
+    if argv and argv[0] == "container-history":
+        parser = argparse.ArgumentParser(prog="dew-encryption container-history", description="Snapshot or inspect Git history for encrypted container files.")
+        parser.add_argument("container", help="Container path.")
+        parser.add_argument("--snapshot", action="store_true", help="Commit the current container file into its container history repo.")
+        parser.add_argument("--limit", type=int, default=25, help="Maximum history rows to print.")
+        args = parser.parse_args(argv[1:])
+        try:
+            container = Path(args.container)
+            if args.snapshot:
+                result = snapshot_container(container)
+                print(f"Container history snapshot: {result.commit}")
+                print(f"Repo: {result.repo}")
+            for entry in container_history(container, limit=args.limit):
+                print(f"{entry.commit}\t{entry.author_date}\t{entry.subject}")
+        except DewError as exc:
+            print(f"dew encryption failed: {exc}", file=sys.stderr)
+            return 1
+        return 0
+
+    if argv and argv[0] == "container-hooks":
+        parser = argparse.ArgumentParser(prog="dew-encryption container-hooks", description="Run configured container open/close hooks.")
+        parser.add_argument("event", choices=["open", "close"], help="Hook event to run.")
+        parser.add_argument("container", help="Container path.")
+        parser.add_argument("--mount-path", default="", help="Mounted path exposed to hooks.")
+        args = parser.parse_args(argv[1:])
+        profile = find_container_profile(Path(args.container))
+        for message in run_container_hooks(profile, args.event, Path(args.container), Path(args.mount_path) if args.mount_path else None):
+            print(message)
+        return 0
+
+    if argv and argv[0] == "container-quick-create":
+        parser = argparse.ArgumentParser(prog="dew-encryption container-quick-create", description="Create a VeraCrypt container from Explorer/Nautilus with remembered defaults.")
+        parser.add_argument("sources", nargs="+", help="Files or folders to turn into containers.")
+        parser.add_argument("--password", help="VeraCrypt container password. If omitted, a hidden prompt is shown.")
+        args = parser.parse_args(argv[1:])
+        try:
+            password = args.password or getpass.getpass("VeraCrypt password: ")
+            if not password:
+                raise DewError("A VeraCrypt password is required.")
+            settings = load_settings()
+            for source in unique_paths(args.sources):
+                container = veracrypt_create_container(source, password, settings=settings.veracrypt)
+                profile = ContainerProfile(name=container.stem, path=str(container), theme=ThemeSettings(), hooks=[])
+                settings.containers = settings.containers or []
+                settings.containers.append(profile)
+                print(f"Quick-created container: {container}")
+            save_settings(settings)
+        except DewError as exc:
+            print(f"dew encryption failed: {exc}", file=sys.stderr)
+            return 1
         return 0
 
     if argv and argv[0] == "watch":
