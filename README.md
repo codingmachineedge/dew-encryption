@@ -2,15 +2,15 @@
 
 Dew Encryption is a small Windows utility that adds a normal Explorer right-click action named `dew encryption`. It snapshots the selected file or folder into a local Git repository, commits the current contents, and compresses that repository into a `.7z` archive.
 
-It also includes a simple GUI file manager for selecting files and running the same workflow without using Explorer.
+It also includes a modern GUI file manager for selecting files, managing file history, configuring VeraCrypt container profiles, customizing per-container themes, running open/close automations, and browsing Git-backed container history without using Explorer.
 
 ## Screenshots
 
 ![Dew Encryption Logo](assets/icons/dew-main.png)
 
-![Dew Encryption GUI](docs/screenshots/gui.svg)
+![Dew Encryption GUI showing the Containers manager with themes, hooks, and history](docs/screenshots/gui.svg)
 
-![Explorer menu mockup](docs/screenshots/explorer-menu.svg)
+![Explorer menu mockup showing history and container quick-create actions](docs/screenshots/explorer-menu.svg)
 
 ## Requirements
 
