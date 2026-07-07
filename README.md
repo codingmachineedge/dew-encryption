@@ -160,6 +160,7 @@ These entries are installed without administrator rights and do not require hold
 
 Files and folders also get VeraCrypt container actions:
 
+- `dew encryption quick create container` creates a `.dew.hc` VeraCrypt container from the selected file or folder and automatically registers it in the GUI container manager.
 - `dew encryption VeraCrypt encrypt` creates a `.dew.hc` VeraCrypt container, copies each selected file or folder into its own container, dismounts the container, and removes the original by default.
 - `.hc` files get `dew encryption VeraCrypt decrypt`, which can decrypt one or more selected containers and restores their contents beside them.
 
@@ -177,7 +178,7 @@ or:
 python -m dew_encryption.gui
 ```
 
-The GUI includes a `History` tab. Select a file or folder, refresh history, and choose a commit to see commit metadata and changed files.
+The GUI includes a `History` tab. Select a file or folder, refresh history, and choose a commit to see commit metadata and changed files. It also includes a `Containers` tab for a modern per-container manager on Windows and Linux.
 
 History manager actions:
 
@@ -189,6 +190,45 @@ History manager actions:
 - `Restore Selected` restores the selected file or folder to the chosen commit.
 - `Open Source` opens the selected folder in Explorer.
 - `Open Repo` opens the local `.dew-encryption-repo` folder.
+
+## Container Manager, Themes, And Hooks
+
+The `Containers` GUI tab stores settings per encrypted container:
+
+- Custom theme background, foreground, accent, font family, and font size.
+- Git-backed file history for each container file, with snapshot, refresh, and open-repo actions in the GUI.
+- Multiple `open` actions and multiple `close` actions per container.
+- Action types for shell scripts/commands, Discord webhooks, and Home Assistant webhooks.
+- Template variables in action targets and payloads: `{event}`, `{container}`, `{container_name}`, `{container_stem}`, `{mount_path}`, `{user}`, `{host}`, and `{timestamp}`.
+
+Script actions run cross-platform with the same template variables also exposed as environment variables such as `DEW_EVENT`, `DEW_CONTAINER`, and `DEW_MOUNT_PATH`. Webhook actions post JSON to the configured URL. Discord actions can use a payload like:
+
+```json
+{"content":"{container_name} was {event} by {user} on {host}"}
+```
+
+Home Assistant webhook actions can point at a URL such as:
+
+```text
+https://homeassistant.local:8123/api/webhook/dew-container-open
+```
+
+The CLI can snapshot and inspect the Git history for container files, then run configured hooks so mount/open workflows or external VeraCrypt launchers can trigger the same automation on both Windows and Linux:
+
+```powershell
+dew-encryption container-history C:\Path\To\Secrets.dew.hc --snapshot
+dew-encryption container-history C:\Path\To\Secrets.dew.hc
+dew-encryption container-hooks open C:\Path\To\Secrets.dew.hc --mount-path X:\
+dew-encryption container-hooks close C:\Path\To\Secrets.dew.hc --mount-path X:\
+```
+
+Quick-create containers from Explorer or Nautilus with:
+
+```powershell
+dew-encryption container-quick-create C:\Path\To\Folder
+```
+
+On Linux, the installer adds `dew encryption quick create container` to the Nautilus scripts menu.
 
 ## Automatic File History
 

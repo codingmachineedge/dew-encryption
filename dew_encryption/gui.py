@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import queue
+import os
 import subprocess
 import sys
 import threading
@@ -9,14 +10,21 @@ from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
 from .core import (
+    ContainerProfile,
     DewError,
+    HookAction,
+    ThemeSettings,
     commit_details,
+    container_history,
+    container_history_repo,
     create_archive_for_repo,
     history,
     load_settings,
     process,
     repo_for_source,
     restore_commit,
+    run_container_hooks,
+    snapshot_container,
     save_settings,
     snapshot,
 )
@@ -34,6 +42,8 @@ class DewFileManager(tk.Tk):
         self.watch_thread: threading.Thread | None = None
         self.settings = load_settings()
         self.setting_vars: dict[str, tk.Variable] = {}
+        self.container_vars: dict[str, tk.Variable] = {}
+        self.hook_vars: dict[str, tk.Variable] = {}
         self._build()
         for path in initial_paths or []:
             self._add(path)
@@ -136,6 +146,195 @@ class DewFileManager(tk.Tk):
         ttk.Checkbutton(settings_tab, text="Keep container after VeraCrypt decrypt", variable=keep_container).grid(row=len(fields) + 1, column=0, columnspan=2, sticky="w", pady=4)
         ttk.Button(settings_tab, text="Save VeraCrypt Settings", command=self.save_veracrypt_settings).grid(row=len(fields) + 2, column=0, sticky="w", pady=(12, 0))
 
+        self.container_tab = ttk.Frame(self.notebook, padding=10)
+        self.notebook.add(self.container_tab, text="Containers")
+        self._build_container_manager()
+
+    def _build_container_manager(self) -> None:
+        tab = self.container_tab
+        tab.columnconfigure(0, weight=1)
+        tab.columnconfigure(1, weight=2)
+        tab.rowconfigure(1, weight=1)
+        ttk.Label(tab, text="Modern container manager: per-container theme colors/fonts plus multiple open/close actions for Discord, Home Assistant, and scripts.").grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        self.container_tree = ttk.Treeview(tab, columns=("name", "path"), show="headings", height=8)
+        self.container_tree.heading("name", text="Container")
+        self.container_tree.heading("path", text="Path")
+        self.container_tree.column("name", width=160)
+        self.container_tree.column("path", width=420)
+        self.container_tree.grid(row=1, column=0, sticky="nsew", padx=(0, 10))
+        self.container_tree.bind("<<TreeviewSelect>>", self.load_container_profile)
+        editor = ttk.Frame(tab)
+        editor.grid(row=1, column=1, sticky="nsew")
+        editor.columnconfigure(1, weight=1)
+        fields = [("Name", "name"), ("Container path", "path"), ("Preferred mount path", "mount_path"), ("Background", "background"), ("Foreground", "foreground"), ("Accent", "accent"), ("Font", "font_family"), ("Font size", "font_size")]
+        for row, (label, key) in enumerate(fields):
+            ttk.Label(editor, text=label).grid(row=row, column=0, sticky="w", pady=3)
+            var = tk.StringVar()
+            self.container_vars[key] = var
+            ttk.Entry(editor, textvariable=var).grid(row=row, column=1, sticky="ew", pady=3, padx=(8, 0))
+        hook_box = ttk.LabelFrame(editor, text="Add open/close action")
+        hook_box.grid(row=len(fields), column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        hook_box.columnconfigure(1, weight=1)
+        hook_fields = [("Action name", "name"), ("Target URL or script", "target"), ("JSON payload / stdin", "payload")]
+        self.hook_vars["event"] = tk.StringVar(value="open")
+        self.hook_vars["kind"] = tk.StringVar(value="script")
+        ttk.Label(hook_box, text="Event").grid(row=0, column=0, sticky="w", pady=3)
+        ttk.Combobox(hook_box, textvariable=self.hook_vars["event"], values=("open", "close"), state="readonly").grid(row=0, column=1, sticky="ew", pady=3)
+        ttk.Label(hook_box, text="Kind").grid(row=1, column=0, sticky="w", pady=3)
+        ttk.Combobox(hook_box, textvariable=self.hook_vars["kind"], values=("script", "discord", "home_assistant"), state="readonly").grid(row=1, column=1, sticky="ew", pady=3)
+        for offset, (label, key) in enumerate(hook_fields, start=2):
+            ttk.Label(hook_box, text=label).grid(row=offset, column=0, sticky="w", pady=3)
+            var = tk.StringVar()
+            self.hook_vars[key] = var
+            ttk.Entry(hook_box, textvariable=var).grid(row=offset, column=1, sticky="ew", pady=3, padx=(8, 0))
+        buttons = ttk.Frame(editor)
+        buttons.grid(row=len(fields)+1, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+        ttk.Button(buttons, text="New", command=self.new_container_profile).pack(side="left", padx=(0, 6))
+        ttk.Button(buttons, text="Add Action", command=self.add_container_hook).pack(side="left", padx=(0, 6))
+        ttk.Button(buttons, text="Save", command=self.save_container_profile).pack(side="left", padx=(0, 6))
+        ttk.Button(buttons, text="Test Open Hooks", command=lambda: self.test_container_hooks("open")).pack(side="left", padx=(0, 6))
+        ttk.Button(buttons, text="Test Close Hooks", command=lambda: self.test_container_hooks("close")).pack(side="left", padx=(0, 6))
+        ttk.Button(buttons, text="Snapshot History", command=self.snapshot_container_history).pack(side="left", padx=(0, 6))
+        ttk.Button(buttons, text="Refresh History", command=self.refresh_container_history).pack(side="left", padx=(0, 6))
+        ttk.Button(buttons, text="Open History Repo", command=self.open_container_history_repo).pack(side="left")
+
+        history_box = ttk.LabelFrame(tab, text="Container file history")
+        history_box.grid(row=2, column=0, columnspan=2, sticky="nsew", pady=(10, 0))
+        history_box.columnconfigure(0, weight=1)
+        history_box.rowconfigure(0, weight=1)
+        self.container_history_tree = ttk.Treeview(history_box, columns=("commit", "date", "subject"), show="headings", height=7)
+        self.container_history_tree.heading("commit", text="Commit")
+        self.container_history_tree.heading("date", text="Date")
+        self.container_history_tree.heading("subject", text="Subject")
+        self.container_history_tree.column("commit", width=90, anchor="center")
+        self.container_history_tree.column("date", width=220)
+        self.container_history_tree.column("subject", width=560)
+        self.container_history_tree.grid(row=0, column=0, sticky="nsew")
+        self.refresh_container_profiles()
+
+    def refresh_container_profiles(self) -> None:
+        for item in self.container_tree.get_children():
+            self.container_tree.delete(item)
+        for idx, profile in enumerate(self.settings.containers or []):
+            self.container_tree.insert("", "end", iid=str(idx), values=(profile.name, profile.path))
+
+    def new_container_profile(self) -> None:
+        for var in self.container_vars.values():
+            var.set("")
+        self.container_vars["background"].set("#0f172a")
+        self.container_vars["foreground"].set("#e5e7eb")
+        self.container_vars["accent"].set("#38bdf8")
+        self.container_vars["font_family"].set("Segoe UI")
+        self.container_vars["font_size"].set("10")
+        self.container_tree.selection_remove(self.container_tree.selection())
+
+    def load_container_profile(self, _event: object | None = None) -> None:
+        selected = self.container_tree.selection()
+        if not selected:
+            return
+        profile = (self.settings.containers or [])[int(selected[0])]
+        theme = profile.theme or ThemeSettings()
+        values = {"name": profile.name, "path": profile.path, "mount_path": profile.mount_path, "background": theme.background, "foreground": theme.foreground, "accent": theme.accent, "font_family": theme.font_family, "font_size": str(theme.font_size)}
+        for key, value in values.items():
+            self.container_vars[key].set(value)
+        self.refresh_container_history()
+
+    def _profile_from_form(self) -> ContainerProfile:
+        return ContainerProfile(
+            name=str(self.container_vars["name"].get() or "Default"),
+            path=str(self.container_vars["path"].get()),
+            mount_path=str(self.container_vars["mount_path"].get()),
+            theme=ThemeSettings(
+                background=str(self.container_vars["background"].get() or "#0f172a"),
+                foreground=str(self.container_vars["foreground"].get() or "#e5e7eb"),
+                accent=str(self.container_vars["accent"].get() or "#38bdf8"),
+                font_family=str(self.container_vars["font_family"].get() or "Segoe UI"),
+                font_size=int(str(self.container_vars["font_size"].get() or "10")),
+            ),
+            hooks=[],
+        )
+
+    def save_container_profile(self) -> None:
+        try:
+            profile = self._profile_from_form()
+        except ValueError as exc:
+            messagebox.showerror("Container Settings", f"Invalid theme setting: {exc}")
+            return
+        selected = self.container_tree.selection()
+        self.settings.containers = self.settings.containers or []
+        if selected:
+            existing = self.settings.containers[int(selected[0])]
+            profile.hooks = existing.hooks or []
+            self.settings.containers[int(selected[0])] = profile
+        else:
+            self.settings.containers.append(profile)
+        save_settings(self.settings)
+        self.refresh_container_profiles()
+        self._log("Container profile saved.")
+
+    def add_container_hook(self) -> None:
+        selected = self.container_tree.selection()
+        if not selected:
+            self.save_container_profile()
+            selected = self.container_tree.selection() or (str(len(self.settings.containers or []) - 1),)
+        hook = HookAction(name=str(self.hook_vars["name"].get() or "New action"), event=str(self.hook_vars["event"].get()), kind=str(self.hook_vars["kind"].get()), target=str(self.hook_vars["target"].get()), payload=str(self.hook_vars["payload"].get()), enabled=True)
+        profile = (self.settings.containers or [])[int(selected[0])]
+        profile.hooks = profile.hooks or []
+        profile.hooks.append(hook)
+        save_settings(self.settings)
+        self._log(f"Added {hook.event} {hook.kind} action to {profile.name}.")
+
+    def _selected_container_profile(self) -> ContainerProfile | None:
+        selected = self.container_tree.selection()
+        if not selected:
+            return None
+        return (self.settings.containers or [])[int(selected[0])]
+
+    def refresh_container_history(self) -> None:
+        if not hasattr(self, "container_history_tree"):
+            return
+        for item in self.container_history_tree.get_children():
+            self.container_history_tree.delete(item)
+        profile = self._selected_container_profile()
+        if not profile or not profile.path:
+            return
+        try:
+            for entry in container_history(Path(profile.path)):
+                self.container_history_tree.insert("", "end", iid=entry.commit, values=(entry.commit, entry.author_date, entry.subject))
+        except DewError as exc:
+            self._log(f"Container history failed: {exc}")
+
+    def snapshot_container_history(self) -> None:
+        profile = self._selected_container_profile()
+        if not profile or not profile.path:
+            messagebox.showinfo("Container History", "Select a saved container profile first.")
+            return
+        try:
+            result = snapshot_container(Path(profile.path))
+        except DewError as exc:
+            messagebox.showerror("Container History", f"Snapshot failed: {exc}")
+            return
+        self._log(f"Container history snapshot: {result.commit}")
+        self.refresh_container_history()
+
+    def open_container_history_repo(self) -> None:
+        profile = self._selected_container_profile()
+        if not profile or not profile.path:
+            messagebox.showinfo("Container History", "Select a saved container profile first.")
+            return
+        self._open_path(container_history_repo(Path(profile.path)))
+
+    def test_container_hooks(self, event: str) -> None:
+        selected = self.container_tree.selection()
+        if not selected:
+            messagebox.showinfo("Container Hooks", "Select a container profile first.")
+            return
+        profile = (self.settings.containers or [])[int(selected[0])]
+        container = Path(profile.path or ".").expanduser()
+        mount_path = Path(profile.mount_path).expanduser() if profile.mount_path else None
+        for message in run_container_hooks(profile, event, container, mount_path):
+            self._log(message)
+
     def add_files(self) -> None:
         for item in filedialog.askopenfilenames(title="Select files"):
             self._add(Path(item))
@@ -227,12 +426,12 @@ class DewFileManager(tk.Tk):
     def open_source(self) -> None:
         source = self._active_source()
         if source:
-            subprocess.Popen(["explorer", str(source)])
+            self._open_path(source)
 
     def open_repo(self) -> None:
         repo = self._active_repo()
         if repo:
-            subprocess.Popen(["explorer", str(repo)])
+            self._open_path(repo)
 
     def save_veracrypt_settings(self) -> None:
         vc = self.settings.veracrypt
@@ -329,6 +528,14 @@ class DewFileManager(tk.Tk):
         if not self.selected:
             return None
         return self.selected[0].resolve()
+
+    def _open_path(self, path: Path) -> None:
+        if os.name == "nt":
+            subprocess.Popen(["explorer", str(path)])
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(path)])
+        else:
+            subprocess.Popen(["xdg-open", str(path)])
 
     def _set_details(self, text: str) -> None:
         self.details.configure(state="normal")
