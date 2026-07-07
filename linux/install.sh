@@ -17,6 +17,9 @@ need() {
 need python3
 need git
 need 7z
+if ! command -v veracrypt >/dev/null 2>&1; then
+  echo "Warning: VeraCrypt was not found. VeraCrypt encrypt/decrypt actions require it." >&2
+fi
 
 python3 -m pip install --user -e "${ROOT}"
 
@@ -47,4 +50,7 @@ GUI:
 
 Nautilus scripts:
   Right-click files or folders, then choose Scripts > Dew Encryption.
+
+VeraCrypt:
+  Install VeraCrypt separately to use VeraCrypt encrypt/decrypt actions.
 MSG

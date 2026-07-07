@@ -18,6 +18,7 @@ It also includes a simple GUI file manager for selecting files and running the s
 - Python 3.10+
 - Git
 - 7-Zip with `7z` available on `PATH`
+- VeraCrypt for VeraCrypt container encrypt/decrypt actions
 
 ## Windows Install
 
@@ -125,6 +126,13 @@ Folders also get file-history actions in the normal Explorer menu:
 
 These entries are installed without administrator rights and do not require holding Shift.
 
+Files and folders also get VeraCrypt container actions:
+
+- `dew encryption VeraCrypt encrypt` creates a `.dew.hc` VeraCrypt container, copies the selected file or folder into it, dismounts the container, and removes the original by default.
+- `.hc` files get `dew encryption VeraCrypt decrypt`, which mounts the container and restores the contents beside it.
+
+These actions prompt for the VeraCrypt password in a console window. VeraCrypt must be installed separately.
+
 ## Use The GUI
 
 ```powershell
@@ -176,6 +184,8 @@ To restore a file or folder to a specific commit:
 
 ```powershell
 dew-encryption restore "C:\Path\To\Folder\Dew Encryption Archives\.dew-encryption-repo" abc1234 C:\Path\To\Folder
+dew-encryption veracrypt-encrypt C:\Path\To\File.txt
+dew-encryption veracrypt-decrypt C:\Path\To\File.txt.dew.hc
 ```
 
 ## Optional Encrypted Archive

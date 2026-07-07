@@ -82,6 +82,8 @@ jobs:
           test -n "${history}"
           commit="$(printf '%s\n' "${history}" | head -n 1 | cut -f1)"
           python -m dew_encryption details "${repo}" "${commit}"
+          python -m dew_encryption veracrypt-encrypt --help
+          python -m dew_encryption veracrypt-decrypt --help
       - name: Validate Linux integration files
         run: |
           bash -n linux/install.sh
@@ -89,3 +91,5 @@ jobs:
           bash -n "linux/nautilus-scripts/dew encryption"
           bash -n "linux/nautilus-scripts/dew encryption start file history"
           bash -n "linux/nautilus-scripts/dew encryption file history manager"
+          bash -n "linux/nautilus-scripts/dew encryption VeraCrypt encrypt"
+          bash -n "linux/nautilus-scripts/dew encryption VeraCrypt decrypt"

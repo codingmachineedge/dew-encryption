@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import getpass
 import os
 import shutil
 import subprocess
@@ -16,6 +17,7 @@ from pathlib import Path
 APP_NAME = "Dew Encryption"
 REPO_DIR_NAME = ".dew-encryption-repo"
 ARCHIVE_DIR_NAME = "Dew Encryption Archives"
+VERACRYPT_EXT = ".dew.hc"
 
 
 class DewError(RuntimeError):
@@ -51,6 +53,24 @@ def find_executable(name: str, fallbacks: list[Path] | None = None) -> Path:
         if candidate.exists():
             return candidate
     raise DewError(f"Required executable not found: {name}")
+
+
+def find_veracrypt() -> Path:
+    names = ["VeraCrypt.exe", "veracrypt.exe"] if os.name == "nt" else ["veracrypt"]
+    for name in names:
+        found = shutil.which(name)
+        if found:
+            return Path(found)
+    fallbacks = [
+        Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "VeraCrypt" / "VeraCrypt.exe",
+        Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)")) / "VeraCrypt" / "VeraCrypt.exe",
+        Path("/usr/bin/veracrypt"),
+        Path("/usr/local/bin/veracrypt"),
+    ]
+    for candidate in fallbacks:
+        if candidate.exists():
+            return candidate
+    raise DewError("VeraCrypt was not found. Install VeraCrypt and make sure its CLI is available.")
 
 
 def run(cmd: list[str], cwd: Path | None = None) -> str:
@@ -260,6 +280,150 @@ def restore_commit(repo: Path, commit: str, source: Path) -> None:
             shutil.copy2(restored, source)
 
 
+def container_path_for_source(source: Path) -> Path:
+    source = source.resolve()
+    return source.with_name(source.name + VERACRYPT_EXT)
+
+
+def source_path_for_container(container: Path) -> Path:
+    container = container.resolve()
+    name = container.name
+    if name.endswith(VERACRYPT_EXT):
+        return container.with_name(name[: -len(VERACRYPT_EXT)])
+    if container.suffix.lower() == ".hc":
+        return container.with_suffix("")
+    return container.with_name(container.name + ".decrypted")
+
+
+def estimated_container_size(source: Path) -> str:
+    size = 0
+    if source.is_dir():
+        for item in source.rglob("*"):
+            if item.is_file():
+                size += item.stat().st_size
+    else:
+        size = source.stat().st_size
+    padded = max(size + 64 * 1024 * 1024, int(size * 1.25) + 16 * 1024 * 1024, 32 * 1024 * 1024)
+    return f"{padded // (1024 * 1024)}M"
+
+
+def free_windows_drive_letter() -> str:
+    used = {Path(f"{letter}:\\").drive.upper() for letter in "DEFGHIJKLMNOPQRSTUVWXYZ" if Path(f"{letter}:\\").exists()}
+    for letter in reversed("DEFGHIJKLMNOPQRSTUVWXYZ"):
+        drive = f"{letter}:"
+        if drive.upper() not in used:
+            return letter
+    raise DewError("No free drive letter is available for VeraCrypt.")
+
+
+def copy_into_mount(source: Path, mount_root: Path) -> None:
+    target = mount_root / source.name
+    if source.is_dir():
+        shutil.copytree(source, target)
+    else:
+        shutil.copy2(source, target)
+
+
+def copy_from_mount(mount_root: Path, output: Path) -> None:
+    items = [item for item in mount_root.iterdir() if item.name not in {"System Volume Information", "$RECYCLE.BIN"}]
+    if not items:
+        raise DewError("The VeraCrypt container did not contain files to decrypt.")
+    if len(items) == 1:
+        item = items[0]
+        target = output
+        if item.is_dir():
+            if target.exists():
+                raise DewError(f"Output path already exists: {target}")
+            shutil.copytree(item, target)
+        else:
+            if output.exists() and output.is_dir():
+                target = output / item.name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(item, target)
+        return
+    output.mkdir(parents=True, exist_ok=True)
+    for item in items:
+        target = output / item.name
+        if item.is_dir():
+            shutil.copytree(item, target)
+        else:
+            shutil.copy2(item, target)
+
+
+def veracrypt_create_container(source: Path, password: str, keep_source: bool = False) -> Path:
+    source = source.resolve()
+    if not source.exists():
+        raise DewError(f"Source does not exist: {source}")
+    vc = find_veracrypt()
+    container = container_path_for_source(source)
+    if container.exists():
+        raise DewError(f"Container already exists: {container}")
+    size = estimated_container_size(source)
+
+    if os.name == "nt":
+        run([
+            str(vc), "/create", str(container), "/size", size, "/password", password,
+            "/encryption", "AES", "/hash", "SHA-512", "/filesystem", "exFAT",
+            "/pim", "0", "/silent", "/force", "/quit",
+        ])
+        letter = free_windows_drive_letter()
+        try:
+            run([str(vc), "/volume", str(container), "/letter", letter, "/password", password, "/pim", "0", "/silent", "/quit"])
+            mount_root = Path(f"{letter}:\\")
+            copy_into_mount(source, mount_root)
+        finally:
+            run([str(vc), "/dismount", letter, "/silent", "/quit"])
+    else:
+        random_source = source if source.is_file() else next((p for p in source.rglob("*") if p.is_file()), source)
+        run([
+            str(vc), "--text", "--create", str(container), "--size", size, "--password", password,
+            "--encryption", "AES", "--hash", "SHA-512", "--filesystem", "exFAT",
+            "--pim", "0", "--keyfiles", "", "--random-source", str(random_source), "--non-interactive",
+        ])
+        with tempfile.TemporaryDirectory(prefix="dew-vc-mount-") as mount_dir:
+            mount_root = Path(mount_dir)
+            try:
+                run([str(vc), "--text", "--mount", str(container), str(mount_root), "--password", password, "--pim", "0", "--keyfiles", "", "--protect-hidden", "no", "--non-interactive"])
+                copy_into_mount(source, mount_root)
+            finally:
+                run([str(vc), "--text", "--dismount", str(container)])
+
+    if not keep_source:
+        if source.is_dir():
+            shutil.rmtree(source)
+        else:
+            source.unlink()
+    return container
+
+
+def veracrypt_decrypt_container(container: Path, password: str, output: Path | None = None, keep_container: bool = True) -> Path:
+    container = container.resolve()
+    if not container.exists():
+        raise DewError(f"Container does not exist: {container}")
+    vc = find_veracrypt()
+    output = (output or source_path_for_container(container)).resolve()
+
+    if os.name == "nt":
+        letter = free_windows_drive_letter()
+        try:
+            run([str(vc), "/volume", str(container), "/letter", letter, "/password", password, "/pim", "0", "/silent", "/quit"])
+            copy_from_mount(Path(f"{letter}:\\"), output)
+        finally:
+            run([str(vc), "/dismount", letter, "/silent", "/quit"])
+    else:
+        with tempfile.TemporaryDirectory(prefix="dew-vc-mount-") as mount_dir:
+            mount_root = Path(mount_dir)
+            try:
+                run([str(vc), "--text", "--mount", str(container), str(mount_root), "--password", password, "--pim", "0", "--keyfiles", "", "--protect-hidden", "no", "--non-interactive"])
+                copy_from_mount(mount_root, output)
+            finally:
+                run([str(vc), "--text", "--dismount", str(container)])
+
+    if not keep_container:
+        container.unlink()
+    return output
+
+
 def watch(paths: list[Path], interval: float = 5.0, once: bool = False) -> None:
     last_commit = ""
     while True:
@@ -274,6 +438,46 @@ def watch(paths: list[Path], interval: float = 5.0, once: bool = False) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] == "veracrypt-encrypt":
+        parser = argparse.ArgumentParser(prog="dew-encryption veracrypt-encrypt", description="Move a file or folder into a VeraCrypt container.")
+        parser.add_argument("source", help="File or folder to encrypt into a VeraCrypt container.")
+        parser.add_argument("--password", help="VeraCrypt container password. If omitted, a hidden prompt is shown.")
+        parser.add_argument("--keep-source", action="store_true", help="Keep the original file or folder after the container is created.")
+        args = parser.parse_args(argv[1:])
+        try:
+            password = args.password or getpass.getpass("VeraCrypt password: ")
+            if not password:
+                raise DewError("A VeraCrypt password is required.")
+            container = veracrypt_create_container(Path(args.source), password, keep_source=args.keep_source)
+        except DewError as exc:
+            print(f"dew encryption failed: {exc}", file=sys.stderr)
+            return 1
+        print(f"VeraCrypt container: {container}")
+        return 0
+
+    if argv and argv[0] == "veracrypt-decrypt":
+        parser = argparse.ArgumentParser(prog="dew-encryption veracrypt-decrypt", description="Extract files from a VeraCrypt container.")
+        parser.add_argument("container", help="VeraCrypt container path.")
+        parser.add_argument("--password", help="VeraCrypt container password. If omitted, a hidden prompt is shown.")
+        parser.add_argument("--output", help="Output file or folder path. Defaults beside the container.")
+        parser.add_argument("--remove-container", action="store_true", help="Delete the container after successful extraction.")
+        args = parser.parse_args(argv[1:])
+        try:
+            password = args.password or getpass.getpass("VeraCrypt password: ")
+            if not password:
+                raise DewError("A VeraCrypt password is required.")
+            output = veracrypt_decrypt_container(
+                Path(args.container),
+                password,
+                output=Path(args.output) if args.output else None,
+                keep_container=not args.remove_container,
+            )
+        except DewError as exc:
+            print(f"dew encryption failed: {exc}", file=sys.stderr)
+            return 1
+        print(f"Decrypted to: {output}")
+        return 0
+
     if argv and argv[0] == "watch":
         parser = argparse.ArgumentParser(prog="dew-encryption watch", description="Automatically commit selected paths whenever contents change.")
         parser.add_argument("paths", nargs="+", help="Files or folders to watch.")

@@ -12,6 +12,9 @@ $WatchCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Se
 $WatchBackgroundCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; Start-Process -WindowStyle Hidden -FilePath '$EscapedPython' -ArgumentList @('-m','dew_encryption','watch','%V') }`""
 $ManagerCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption.gui '%1' --history }`""
 $ManagerBackgroundCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption.gui '%V' --history }`""
+$VeraCryptEncryptCommand = "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption veracrypt-encrypt '%1'; Read-Host 'Press Enter to close' }`""
+$VeraCryptFolderEncryptCommand = "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption veracrypt-encrypt '%1'; Read-Host 'Press Enter to close' }`""
+$VeraCryptDecryptCommand = "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption veracrypt-decrypt '%1'; Read-Host 'Press Enter to close' }`""
 
 $keys = @(
     @{ Path = "HKCU:\Software\Classes\*\shell\dew-encryption"; Verb = "dew encryption"; Command = $Command },
@@ -20,7 +23,10 @@ $keys = @(
     @{ Path = "HKCU:\Software\Classes\Directory\shell\dew-encryption-watch"; Verb = "dew encryption start file history"; Command = $WatchCommand },
     @{ Path = "HKCU:\Software\Classes\Directory\Background\shell\dew-encryption-watch"; Verb = "dew encryption start file history"; Command = $WatchBackgroundCommand },
     @{ Path = "HKCU:\Software\Classes\Directory\shell\dew-encryption-manager"; Verb = "dew encryption file history manager"; Command = $ManagerCommand },
-    @{ Path = "HKCU:\Software\Classes\Directory\Background\shell\dew-encryption-manager"; Verb = "dew encryption file history manager"; Command = $ManagerBackgroundCommand }
+    @{ Path = "HKCU:\Software\Classes\Directory\Background\shell\dew-encryption-manager"; Verb = "dew encryption file history manager"; Command = $ManagerBackgroundCommand },
+    @{ Path = "HKCU:\Software\Classes\*\shell\dew-encryption-veracrypt-encrypt"; Verb = "dew encryption VeraCrypt encrypt"; Command = $VeraCryptEncryptCommand },
+    @{ Path = "HKCU:\Software\Classes\Directory\shell\dew-encryption-veracrypt-encrypt"; Verb = "dew encryption VeraCrypt encrypt"; Command = $VeraCryptFolderEncryptCommand },
+    @{ Path = "HKCU:\Software\Classes\.hc\shell\dew-encryption-veracrypt-decrypt"; Verb = "dew encryption VeraCrypt decrypt"; Command = $VeraCryptDecryptCommand }
 )
 
 foreach ($item in $keys) {
@@ -31,6 +37,10 @@ foreach ($item in $keys) {
         $icon = Join-Path $ProjectRoot "assets\icons\dew-watch.ico"
     } elseif ($item.Path -like "*dew-encryption-manager") {
         $icon = Join-Path $ProjectRoot "assets\icons\dew-history.ico"
+    } elseif ($item.Path -like "*veracrypt-encrypt") {
+        $icon = Join-Path $ProjectRoot "assets\icons\dew-veracrypt-encrypt.ico"
+    } elseif ($item.Path -like "*veracrypt-decrypt") {
+        $icon = Join-Path $ProjectRoot "assets\icons\dew-veracrypt-decrypt.ico"
     } elseif ($item.Path -like "*dew-encryption") {
         $icon = Join-Path $ProjectRoot "assets\icons\dew-archive.ico"
     }

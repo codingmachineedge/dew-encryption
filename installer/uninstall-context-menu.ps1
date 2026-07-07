@@ -7,7 +7,10 @@ $keys = @(
     "HKCU:\Software\Classes\Directory\shell\dew-encryption-watch",
     "HKCU:\Software\Classes\Directory\Background\shell\dew-encryption-watch",
     "HKCU:\Software\Classes\Directory\shell\dew-encryption-manager",
-    "HKCU:\Software\Classes\Directory\Background\shell\dew-encryption-manager"
+    "HKCU:\Software\Classes\Directory\Background\shell\dew-encryption-manager",
+    "HKCU:\Software\Classes\*\shell\dew-encryption-veracrypt-encrypt",
+    "HKCU:\Software\Classes\Directory\shell\dew-encryption-veracrypt-encrypt",
+    "HKCU:\Software\Classes\.hc\shell\dew-encryption-veracrypt-decrypt"
 )
 
 foreach ($key in $keys) {

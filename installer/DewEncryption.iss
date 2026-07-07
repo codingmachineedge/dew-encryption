@@ -35,6 +35,8 @@ Source: "..\assets\icons\dew-main.ico"; DestDir: "{app}\icons"; Flags: ignorever
 Source: "..\assets\icons\dew-archive.ico"; DestDir: "{app}\icons"; Flags: ignoreversion
 Source: "..\assets\icons\dew-watch.ico"; DestDir: "{app}\icons"; Flags: ignoreversion
 Source: "..\assets\icons\dew-history.ico"; DestDir: "{app}\icons"; Flags: ignoreversion
+Source: "..\assets\icons\dew-veracrypt-encrypt.ico"; DestDir: "{app}\icons"; Flags: ignoreversion
+Source: "..\assets\icons\dew-veracrypt-decrypt.ico"; DestDir: "{app}\icons"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\Dew Encryption"; Filename: "{app}\{#MyAppGuiExeName}"
@@ -72,6 +74,18 @@ Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\dew-encryption-
 Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\dew-encryption-manager"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\icons\dew-history.ico"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\dew-encryption-manager\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppGuiExeName}"" ""%V"" --history"; Flags: uninsdeletekey
 
+Root: HKCU; Subkey: "Software\Classes\*\shell\dew-encryption-veracrypt-encrypt"; ValueType: string; ValueName: "MUIVerb"; ValueData: "dew encryption VeraCrypt encrypt"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\*\shell\dew-encryption-veracrypt-encrypt"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\icons\dew-veracrypt-encrypt.ico"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\*\shell\dew-encryption-veracrypt-encrypt\command"; ValueType: string; ValueName: ""; ValueData: "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command ""& '{app}\{#MyAppExeName}' veracrypt-encrypt '%1'; Read-Host 'Press Enter to close'"""; Flags: uninsdeletekey
+
+Root: HKCU; Subkey: "Software\Classes\Directory\shell\dew-encryption-veracrypt-encrypt"; ValueType: string; ValueName: "MUIVerb"; ValueData: "dew encryption VeraCrypt encrypt"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\Directory\shell\dew-encryption-veracrypt-encrypt"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\icons\dew-veracrypt-encrypt.ico"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\Directory\shell\dew-encryption-veracrypt-encrypt\command"; ValueType: string; ValueName: ""; ValueData: "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command ""& '{app}\{#MyAppExeName}' veracrypt-encrypt '%1'; Read-Host 'Press Enter to close'"""; Flags: uninsdeletekey
+
+Root: HKCU; Subkey: "Software\Classes\.hc\shell\dew-encryption-veracrypt-decrypt"; ValueType: string; ValueName: "MUIVerb"; ValueData: "dew encryption VeraCrypt decrypt"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\.hc\shell\dew-encryption-veracrypt-decrypt"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\icons\dew-veracrypt-decrypt.ico"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\.hc\shell\dew-encryption-veracrypt-decrypt\command"; ValueType: string; ValueName: ""; ValueData: "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command ""& '{app}\{#MyAppExeName}' veracrypt-decrypt '%1'; Read-Host 'Press Enter to close'"""; Flags: uninsdeletekey
+
 [Code]
 function CommandExists(Name: String): Boolean;
 var
@@ -89,9 +103,11 @@ begin
     Missing := Missing + 'Git' + #13#10;
   if not CommandExists('7z') then
     Missing := Missing + '7-Zip' + #13#10;
+  if not CommandExists('VeraCrypt') then
+    Missing := Missing + 'VeraCrypt' + #13#10;
 
   if Missing <> '' then
-    MsgBox('Dew Encryption requires these command-line dependencies on PATH:' + #13#10#13#10 + Missing + #13#10 + 'The installer will continue, but archive/history actions need these tools. The PowerShell bootstrap installer can install dependencies automatically.', mbInformation, MB_OK);
+    MsgBox('Dew Encryption requires these command-line dependencies on PATH for all actions:' + #13#10#13#10 + Missing + #13#10 + 'The installer will continue, but related actions need these tools. The PowerShell bootstrap installer can install Git and 7-Zip automatically; VeraCrypt is installed separately.', mbInformation, MB_OK);
 
   Result := True;
 end;
