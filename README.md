@@ -114,7 +114,7 @@ On Linux, use normal POSIX paths with the same commands.
 
 ## Full GUI Mode
 
-Available on Windows and Linux:
+Available on Windows and Linux. The current packaged GUI is Python/Tkinter, and a C# Avalonia GUI target is available under `csharp/DewEncryption.Gui` for the native cross-platform GUI goal:
 
 ```powershell
 dew-encryption-gui
@@ -124,6 +124,15 @@ Open directly to a folder's history manager:
 
 ```powershell
 dew-encryption-gui C:\Path\To\Folder --history
+```
+
+## C# GUI Target
+
+The `csharp/DewEncryption.Gui` project is an Avalonia/.NET 8 desktop shell for Windows and Linux. It drives the existing `dew-encryption` CLI so the C# interface can share the mature encryption, Git history, VeraCrypt, and hook workflows while the native UI is expanded.
+
+```bash
+dotnet restore csharp/DewEncryption.Gui/DewEncryption.Gui.csproj
+dotnet build csharp/DewEncryption.Gui/DewEncryption.Gui.csproj
 ```
 
 ## GitHub Pages
