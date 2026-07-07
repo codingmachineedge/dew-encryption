@@ -10,12 +10,14 @@ public sealed partial class MainWindow : Window
 {
     private readonly ObservableCollection<DewPathItem> selectedPaths = [];
     private readonly ObservableCollection<string> containers = [];
+    private readonly ObservableCollection<string> driveProfiles = [];
 
     public MainWindow()
     {
         InitializeComponent();
         FilesGrid.ItemsSource = selectedPaths;
         ContainersList.ItemsSource = containers;
+        DriveProfilesList.ItemsSource = driveProfiles;
         Log("Ready. Select files, folders, or containers to drive the dew-encryption CLI.");
     }
 
@@ -163,6 +165,135 @@ public sealed partial class MainWindow : Window
         }
 
         await RunCliAsync(args.ToArray());
+    }
+
+
+    private void NewDrive_Click(object? sender, RoutedEventArgs e)
+    {
+        string name = string.IsNullOrWhiteSpace(DriveNameBox.Text) ? "Dew Drive" : DriveNameBox.Text.Trim();
+        string folder = DriveFolderBox.Text?.Trim() ?? string.Empty;
+        string registry = DriveRegistryImageBox.Text?.Trim() ?? string.Empty;
+        string label = string.IsNullOrWhiteSpace(folder) ? name : $"{name} — {folder}";
+        if (!string.IsNullOrWhiteSpace(registry))
+        {
+            label = $"{label} ⇄ {registry}";
+        }
+
+        driveProfiles.Add(label);
+        Log($"Registered Dew Drive draft: {label}");
+    }
+
+    private async void PickDriveFolder_Click(object? sender, RoutedEventArgs e)
+    {
+        IReadOnlyList<IStorageFolder> folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title = "Select local Dew Drive folder",
+            AllowMultiple = false,
+        });
+
+        IStorageFolder? folder = folders.FirstOrDefault();
+        if (folder is not null)
+        {
+            DriveFolderBox.Text = folder.Path.LocalPath;
+            NewDrive_Click(sender, e);
+        }
+    }
+
+    private async void AddDriveFiles_Click(object? sender, RoutedEventArgs e)
+    {
+        IReadOnlyList<IStorageFile> files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "Add files to Dew Drive",
+            AllowMultiple = true,
+        });
+
+        AppendDriveItems(files.Select(file => file.Path.LocalPath));
+    }
+
+    private async void AddDriveFolder_Click(object? sender, RoutedEventArgs e)
+    {
+        IReadOnlyList<IStorageFolder> folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title = "Add folder to Dew Drive",
+            AllowMultiple = false,
+        });
+
+        AppendDriveItems(folders.Select(folder => folder.Path.LocalPath));
+    }
+
+    private async void SyncDrive_Click(object? sender, RoutedEventArgs e)
+    {
+        await RunDewDriveAsync("sync", push: false);
+    }
+
+    private async void SyncPushDrive_Click(object? sender, RoutedEventArgs e)
+    {
+        await RunDewDriveAsync("sync", push: true);
+    }
+
+    private async void PullDrive_Click(object? sender, RoutedEventArgs e)
+    {
+        await RunDewDriveAsync("pull", push: false);
+    }
+
+    private async void RestoreDrive_Click(object? sender, RoutedEventArgs e)
+    {
+        await RunDewDriveAsync("restore", push: false);
+    }
+
+    private void AppendDriveItems(IEnumerable<string> paths)
+    {
+        foreach (string path in paths.Where(path => !string.IsNullOrWhiteSpace(path)))
+        {
+            DriveItemsBox.Text += $"{path}{Environment.NewLine}";
+            Log($"Added to Dew Drive staging list: {path}");
+        }
+    }
+
+    private async Task RunDewDriveAsync(string command, bool push)
+    {
+        string folder = DriveFolderBox.Text?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(folder))
+        {
+            Log("Choose a local Dew Drive folder before running a drive command.");
+            return;
+        }
+
+        List<string> args = ["dew-drive", command, "--folder", folder];
+        string registryImage = DriveRegistryImageBox.Text?.Trim() ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(registryImage))
+        {
+            args.Add("--registry-image");
+            args.Add(registryImage);
+        }
+
+        if (command == "sync")
+        {
+            args.Add("--mode");
+            args.Add(SelectedDriveMode());
+            AddPatternArgs(args, "--include", DriveIncludePatternsBox.Text);
+            AddPatternArgs(args, "--exclude", DriveExcludePatternsBox.Text);
+            if (push)
+            {
+                args.Add("--push");
+            }
+        }
+
+        await RunCliAsync(args.ToArray());
+    }
+
+    private string SelectedDriveMode()
+    {
+        return (DriveEncryptionModeBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "standard";
+    }
+
+    private static void AddPatternArgs(List<string> args, string option, string? value)
+    {
+        foreach (string pattern in (value ?? string.Empty).Split([Environment.NewLine, ",", ";"], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            args.Add(option);
+            args.Add(pattern);
+        }
     }
 
     private void AddPath(string path, string kind)

@@ -108,13 +108,24 @@ class ContainerProfile:
 
 
 @dataclass
+class DewDriveProfile:
+    name: str = "Default Drive"
+    folder: str = ""
+    registry_image: str = ""
+    encryption_mode: str = "standard"
+    include_patterns: str = "**/*"
+    exclude_patterns: str = ""
+
+
+@dataclass
 class AppSettings:
     veracrypt: VeraCryptSettings
     containers: list[ContainerProfile] | None = None
+    dew_drives: list[DewDriveProfile] | None = None
 
 
 def default_settings() -> AppSettings:
-    return AppSettings(veracrypt=VeraCryptSettings(), containers=[])
+    return AppSettings(veracrypt=VeraCryptSettings(), containers=[], dew_drives=[])
 
 
 def load_settings() -> AppSettings:
@@ -149,7 +160,14 @@ def load_settings() -> AppSettings:
             theme=ThemeSettings(**theme_values),
             hooks=hooks,
         ))
-    return AppSettings(veracrypt=VeraCryptSettings(**values), containers=profiles)
+    drives: list[DewDriveProfile] = []
+    for drive_raw in raw.get("dew_drives", []) if isinstance(raw, dict) else []:
+        if not isinstance(drive_raw, dict):
+            continue
+        drive_values = asdict(DewDriveProfile())
+        drive_values.update({key: value for key, value in drive_raw.items() if key in drive_values})
+        drives.append(DewDriveProfile(**drive_values))
+    return AppSettings(veracrypt=VeraCryptSettings(**values), containers=profiles, dew_drives=drives)
 
 
 def save_settings(settings: AppSettings) -> None:
@@ -661,6 +679,49 @@ def find_container_profile(container: Path) -> ContainerProfile | None:
             return profile
     return None
 
+
+def dew_drive_add(folder: Path, sources: list[Path]) -> list[Path]:
+    folder = folder.expanduser().resolve()
+    folder.mkdir(parents=True, exist_ok=True)
+    copied: list[Path] = []
+    for source in sources:
+        source = source.expanduser().resolve()
+        target = folder / source.name
+        if source.is_dir():
+            if target.exists():
+                shutil.rmtree(target)
+            shutil.copytree(source, target)
+        elif source.is_file():
+            shutil.copy2(source, target)
+        else:
+            raise DewError(f"Drive source does not exist: {source}")
+        copied.append(target)
+    return copied
+
+
+def dew_drive_sync(folder: Path, registry_image: str = "", push: bool = False) -> DewResult:
+    folder = folder.expanduser().resolve()
+    if not folder.exists():
+        raise DewError(f"Dew Drive folder does not exist: {folder}")
+    result = snapshot([folder])
+    if push and registry_image:
+        subprocess.run(["git", "-C", str(result.repo), "push", registry_image, "HEAD"], check=True)
+    return result
+
+
+def dew_drive_pull(folder: Path, registry_image: str = "") -> None:
+    folder = folder.expanduser().resolve()
+    repo = repo_for_source(folder)
+    if registry_image:
+        subprocess.run(["git", "-C", str(repo), "pull", registry_image, "HEAD"], check=True)
+    else:
+        subprocess.run(["git", "-C", str(repo), "pull"], check=True)
+
+
+def dew_drive_restore(folder: Path, commit: str = "HEAD") -> None:
+    folder = folder.expanduser().resolve()
+    restore_commit(repo_for_source(folder), commit, folder)
+
 def watch(paths: list[Path], interval: float = 5.0, once: bool = False) -> None:
     last_commit = ""
     while True:
@@ -675,6 +736,41 @@ def watch(paths: list[Path], interval: float = 5.0, once: bool = False) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+
+    if argv and argv[0] == "dew-drive":
+        parser = argparse.ArgumentParser(prog="dew-encryption dew-drive", description="Sync, pull, or restore an encrypted Dew Drive folder.")
+        subparsers = parser.add_subparsers(dest="command", required=True)
+        sync_parser = subparsers.add_parser("sync", help="Commit a Dew Drive folder and optionally push it.")
+        sync_parser.add_argument("--folder", required=True, help="Local Dew Drive folder.")
+        sync_parser.add_argument("--registry-image", default="", help="Registry image or Git remote used by the drive.")
+        sync_parser.add_argument("--mode", default="standard", help="Encryption mode selected by the GUI.")
+        sync_parser.add_argument("--include", action="append", default=[], help="Include pattern.")
+        sync_parser.add_argument("--exclude", action="append", default=[], help="Exclude pattern.")
+        sync_parser.add_argument("--push", action="store_true", help="Push after syncing.")
+        pull_parser = subparsers.add_parser("pull", help="Pull the latest encrypted Dew Drive state.")
+        pull_parser.add_argument("--folder", required=True, help="Local Dew Drive folder.")
+        pull_parser.add_argument("--registry-image", default="", help="Registry image or Git remote used by the drive.")
+        restore_parser = subparsers.add_parser("restore", help="Restore a Dew Drive folder from a commit.")
+        restore_parser.add_argument("--folder", required=True, help="Local Dew Drive folder.")
+        restore_parser.add_argument("--registry-image", default="", help="Registry image or Git remote used by the drive.")
+        restore_parser.add_argument("--commit", default="HEAD", help="Commit to restore.")
+        args = parser.parse_args(argv[1:])
+        try:
+            if args.command == "sync":
+                result = dew_drive_sync(Path(args.folder), args.registry_image, push=args.push)
+                print(f"Dew Drive synced: {result.commit}")
+                print(f"Repo: {result.repo}")
+            elif args.command == "pull":
+                dew_drive_pull(Path(args.folder), args.registry_image)
+                print(f"Dew Drive pulled: {args.folder}")
+            elif args.command == "restore":
+                dew_drive_restore(Path(args.folder), args.commit)
+                print(f"Dew Drive restored: {args.folder} to {args.commit}")
+        except (DewError, subprocess.CalledProcessError) as exc:
+            print(f"dew encryption failed: {exc}", file=sys.stderr)
+            return 1
+        return 0
+
     if argv and argv[0] == "portable":
         parser = argparse.ArgumentParser(prog="dew-encryption portable", description="Manage portable mode.")
         parser.add_argument("--init", action="store_true", help="Create portable.flag beside the app so settings are stored portably.")
