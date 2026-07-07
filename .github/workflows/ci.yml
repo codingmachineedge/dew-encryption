@@ -38,6 +38,14 @@ jobs:
           New-Item -ItemType Directory -Path $sample | Out-Null
           Set-Content -Path (Join-Path $sample "notes.txt") -Value "ci sample"
           python -m dew_encryption $sample
+          Set-Content -Path (Join-Path $sample "notes.txt") -Value "ci sample changed"
+          python -m dew_encryption watch $sample --once
+          $history = python -m dew_encryption history (Join-Path $sample "Dew Encryption Archives\.dew-encryption-repo")
+          if (-not $history) {
+            throw "No history was produced."
+          }
+          $commit = ($history -split "`n")[0].Split("`t")[0]
+          python -m dew_encryption details (Join-Path $sample "Dew Encryption Archives\.dew-encryption-repo") $commit
           if (-not (Get-ChildItem (Join-Path $sample "Dew Encryption Archives") -Filter *.7z)) {
             throw "No archive was produced."
           }

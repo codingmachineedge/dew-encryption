@@ -75,6 +75,30 @@ or:
 python -m dew_encryption.gui
 ```
 
+The GUI includes a `History` tab. Select a file or folder, refresh history, and choose a commit to see commit metadata and changed files.
+
+## Automatic File History
+
+Dew Encryption can watch selected paths and commit a new local history snapshot whenever files are added, changed, or deleted:
+
+```powershell
+dew-encryption watch C:\Path\To\Folder --interval 5
+```
+
+The GUI exposes the same behavior with `Start Auto History` and `Stop Auto History` in the `History` tab.
+
+To inspect history from the command line:
+
+```powershell
+dew-encryption history "C:\Path\To\Folder\Dew Encryption Archives\.dew-encryption-repo"
+```
+
+To inspect a specific commit:
+
+```powershell
+dew-encryption details "C:\Path\To\Folder\Dew Encryption Archives\.dew-encryption-repo" abc1234
+```
+
 ## Optional Encrypted Archive
 
 The CLI accepts a password for 7-Zip encryption:

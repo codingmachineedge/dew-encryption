@@ -6,7 +6,7 @@ import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from .core import DewError, process
+from .core import DewError, archive_output_dir, commit_details, history, process, snapshot
 
 
 class DewFileManager(tk.Tk):
@@ -17,6 +17,8 @@ class DewFileManager(tk.Tk):
         self.minsize(820, 500)
         self.selected: list[Path] = []
         self.events: queue.Queue[str] = queue.Queue()
+        self.watch_stop = threading.Event()
+        self.watch_thread: threading.Thread | None = None
         self._build()
         self.after(100, self._drain_events)
 
@@ -31,8 +33,11 @@ class DewFileManager(tk.Tk):
         ttk.Button(bar, text="Remove", command=self.remove_selected).pack(side="left", padx=(0, 8))
         ttk.Button(bar, text="Run Dew Encryption", command=self.run_job).pack(side="right")
 
-        body = ttk.Frame(self, padding=(10, 0, 10, 10))
-        body.grid(row=1, column=0, sticky="nsew")
+        self.notebook = ttk.Notebook(self)
+        self.notebook.grid(row=1, column=0, sticky="nsew", padx=10, pady=(0, 10))
+
+        body = ttk.Frame(self.notebook, padding=(0, 0, 0, 0))
+        self.notebook.add(body, text="Files")
         body.columnconfigure(0, weight=1)
         body.rowconfigure(0, weight=1)
 
@@ -51,6 +56,33 @@ class DewFileManager(tk.Tk):
         self.log.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(10, 0))
         self.log.insert("end", "Select files or folders, then run Dew Encryption.\n")
         self.log.configure(state="disabled")
+
+        history_tab = ttk.Frame(self.notebook)
+        self.notebook.add(history_tab, text="History")
+        history_tab.columnconfigure(0, weight=1)
+        history_tab.columnconfigure(1, weight=1)
+        history_tab.rowconfigure(1, weight=1)
+
+        history_bar = ttk.Frame(history_tab, padding=(0, 0, 0, 10))
+        history_bar.grid(row=0, column=0, columnspan=2, sticky="ew")
+        ttk.Button(history_bar, text="Refresh History", command=self.refresh_history).pack(side="left", padx=(0, 8))
+        ttk.Button(history_bar, text="Start Auto History", command=self.start_watch).pack(side="left", padx=(0, 8))
+        ttk.Button(history_bar, text="Stop Auto History", command=self.stop_watch).pack(side="left")
+
+        self.history_tree = ttk.Treeview(history_tab, columns=("commit", "date", "subject"), show="headings")
+        self.history_tree.heading("commit", text="Commit")
+        self.history_tree.heading("date", text="Date")
+        self.history_tree.heading("subject", text="Subject")
+        self.history_tree.column("commit", width=90, anchor="center")
+        self.history_tree.column("date", width=220)
+        self.history_tree.column("subject", width=360)
+        self.history_tree.grid(row=1, column=0, sticky="nsew", padx=(0, 10))
+        self.history_tree.bind("<<TreeviewSelect>>", self.show_history_details)
+
+        self.details = tk.Text(history_tab, wrap="word")
+        self.details.grid(row=1, column=1, sticky="nsew")
+        self.details.insert("end", "Select a commit to view details and changed files.\n")
+        self.details.configure(state="disabled")
 
     def add_files(self) -> None:
         for item in filedialog.askopenfilenames(title="Select files"):
@@ -78,9 +110,54 @@ class DewFileManager(tk.Tk):
     def _worker(self, paths: list[Path]) -> None:
         try:
             result = process(paths)
-            self.events.put(f"Archive: {result.archive}\nRepo: {result.repo}\nCommit: {result.commit}\n")
+            self.events.put(f"Archive: {result.archive}\nRepo: {result.repo}\nCommit: {result.commit}\n::refresh-history::")
         except DewError as exc:
             self.events.put(f"Failed: {exc}\n")
+
+    def start_watch(self) -> None:
+        if not self.selected:
+            messagebox.showinfo("Dew Encryption", "Select at least one file or folder first.")
+            return
+        if self.watch_thread and self.watch_thread.is_alive():
+            self._log("Auto history is already running.")
+            return
+        self.watch_stop.clear()
+        paths = list(self.selected)
+        self.watch_thread = threading.Thread(target=self._watch_worker, args=(paths,), daemon=True)
+        self.watch_thread.start()
+        self._log("Auto history started.")
+
+    def stop_watch(self) -> None:
+        self.watch_stop.set()
+        self._log("Auto history stopped.")
+
+    def refresh_history(self) -> None:
+        for item in self.history_tree.get_children():
+            self.history_tree.delete(item)
+        repo = self._active_repo()
+        if not repo:
+            self._set_details("Select a file or folder with Dew Encryption history first.\n")
+            return
+        try:
+            for entry in history(repo):
+                self.history_tree.insert("", "end", iid=entry.commit, values=(entry.commit, entry.author_date, entry.subject))
+        except DewError as exc:
+            self._set_details(f"Failed to load history: {exc}\n")
+
+    def show_history_details(self, _event: object | None = None) -> None:
+        repo = self._active_repo()
+        selected = self.history_tree.selection()
+        if not repo or not selected:
+            return
+        commit = selected[0]
+        try:
+            message, changes = commit_details(repo, commit)
+        except DewError as exc:
+            self._set_details(f"Failed to load commit details: {exc}\n")
+            return
+        lines = [message, "", "Changed files:"]
+        lines.extend(f"{change.status}  {change.path}" for change in changes)
+        self._set_details("\n".join(lines) + "\n")
 
     def _add(self, path: Path) -> None:
         path = path.resolve()
@@ -99,10 +176,38 @@ class DewFileManager(tk.Tk):
     def _drain_events(self) -> None:
         while True:
             try:
-                self._log(self.events.get_nowait())
+                message = self.events.get_nowait()
+                refresh = "::refresh-history::" in message
+                self._log(message.replace("::refresh-history::", "").rstrip())
+                if refresh:
+                    self.refresh_history()
             except queue.Empty:
                 break
         self.after(100, self._drain_events)
+
+    def _watch_worker(self, paths: list[Path]) -> None:
+        last_commit = ""
+        while not self.watch_stop.is_set():
+            try:
+                result = snapshot(paths)
+                if result.commit and result.commit != last_commit:
+                    self.events.put(f"Auto history commit: {result.commit}\n::refresh-history::")
+                    last_commit = result.commit
+            except DewError as exc:
+                self.events.put(f"Auto history failed: {exc}\n")
+            self.watch_stop.wait(5.0)
+
+    def _active_repo(self) -> Path | None:
+        if not self.selected:
+            return None
+        root = self.selected[0].resolve()
+        return archive_output_dir(root) / ".dew-encryption-repo"
+
+    def _set_details(self, text: str) -> None:
+        self.details.configure(state="normal")
+        self.details.delete("1.0", "end")
+        self.details.insert("end", text)
+        self.details.configure(state="disabled")
 
 
 def main() -> None:
