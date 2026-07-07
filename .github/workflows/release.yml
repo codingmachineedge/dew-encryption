@@ -26,7 +26,7 @@ jobs:
           Copy-Item dist\app\dew-encryption.exe,dist\app\dew-encryption-gui.exe -Destination dist\DewEncryptionPortable
           Copy-Item assets\icons\*.ico,assets\icons\*.png -Destination dist\DewEncryptionPortable\icons
           New-Item -ItemType Directory -Path dist\DewEncryptionPortable\installer | Out-Null
-          Copy-Item installer\create-elevated-tasks.ps1,installer\remove-elevated-tasks.ps1 -Destination dist\DewEncryptionPortable\installer
+          Copy-Item installer\create-elevated-tasks.ps1,installer\remove-elevated-tasks.ps1,installer\launch-create-elevated-tasks.ps1,installer\launch-remove-elevated-tasks.ps1 -Destination dist\DewEncryptionPortable\installer
           Copy-Item README.md,LICENSE -Destination dist\DewEncryptionPortable
           Set-Content -Path dist\DewEncryptionPortable\portable.flag -Value "portable"
           Compress-Archive -Path dist\DewEncryptionPortable\* -DestinationPath dist\DewEncryptionPortable.zip -Force
