@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import fnmatch
 import getpass
+import hashlib
 import json
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -22,6 +25,8 @@ APP_NAME = "Dew Encryption"
 REPO_DIR_NAME = ".dew-encryption-repo"
 ARCHIVE_DIR_NAME = "Dew Encryption Archives"
 VERACRYPT_EXT = ".dew.hc"
+DEW_DRIVE_PAYLOAD_NAME = "payload.enc"
+DEW_DRIVE_METADATA_NAME = "metadata.json"
 
 
 def app_base_dir() -> Path:
@@ -99,6 +104,17 @@ class HookAction:
 
 
 @dataclass
+class DewDriveProfile:
+    name: str = "Default"
+    local_path: str = ""
+    registry: str = ""
+    auto_push: bool = False
+    encryption_mode: str = "7z"
+    include_patterns: list[str] | None = None
+    exclude_patterns: list[str] | None = None
+
+
+@dataclass
 class ContainerProfile:
     name: str = "Default"
     path: str = ""
@@ -111,10 +127,11 @@ class ContainerProfile:
 class AppSettings:
     veracrypt: VeraCryptSettings
     containers: list[ContainerProfile] | None = None
+    dew_drive: list[DewDriveProfile] | None = None
 
 
 def default_settings() -> AppSettings:
-    return AppSettings(veracrypt=VeraCryptSettings(), containers=[])
+    return AppSettings(veracrypt=VeraCryptSettings(), containers=[], dew_drive=[])
 
 
 def load_settings() -> AppSettings:
@@ -129,6 +146,16 @@ def load_settings() -> AppSettings:
     defaults = VeraCryptSettings()
     values = asdict(defaults)
     values.update({key: value for key, value in vc_raw.items() if key in values})
+    drive_profiles: list[DewDriveProfile] = []
+    for profile_raw in raw.get("dew_drive", []) if isinstance(raw, dict) else []:
+        if not isinstance(profile_raw, dict):
+            continue
+        drive_values = asdict(DewDriveProfile())
+        drive_values.update({key: value for key, value in profile_raw.items() if key in drive_values})
+        drive_values["include_patterns"] = list(drive_values.get("include_patterns") or [])
+        drive_values["exclude_patterns"] = list(drive_values.get("exclude_patterns") or [])
+        drive_profiles.append(DewDriveProfile(**drive_values))
+
     profiles: list[ContainerProfile] = []
     for profile_raw in raw.get("containers", []) if isinstance(raw, dict) else []:
         if not isinstance(profile_raw, dict):
@@ -149,7 +176,7 @@ def load_settings() -> AppSettings:
             theme=ThemeSettings(**theme_values),
             hooks=hooks,
         ))
-    return AppSettings(veracrypt=VeraCryptSettings(**values), containers=profiles)
+    return AppSettings(veracrypt=VeraCryptSettings(**values), containers=profiles, dew_drive=drive_profiles)
 
 
 def save_settings(settings: AppSettings) -> None:
@@ -661,6 +688,175 @@ def find_container_profile(container: Path) -> ContainerProfile | None:
             return profile
     return None
 
+
+@dataclass(frozen=True)
+class DewDriveSyncResult:
+    profile: DewDriveProfile
+    source: Path
+    image: str
+    build_context: Path
+    payload: Path
+    metadata: Path
+    pushed: bool
+
+
+def app_version() -> str:
+    try:
+        from dew_encryption import __version__
+    except ImportError:
+        return "unknown"
+    return __version__
+
+
+def find_dew_drive_profile(name: str) -> DewDriveProfile:
+    for profile in load_settings().dew_drive or []:
+        if profile.name == name:
+            return profile
+    raise DewError(f"Dew Drive profile not found: {name}")
+
+
+def path_matches_patterns(relative_path: str, patterns: list[str]) -> bool:
+    normalized = relative_path.replace(os.sep, "/")
+    name = Path(normalized).name
+    return any(fnmatch.fnmatch(normalized, pattern) or fnmatch.fnmatch(name, pattern) for pattern in patterns)
+
+
+def selected_dew_drive_files(source: Path, include_patterns: list[str], exclude_patterns: list[str]) -> list[Path]:
+    if source.is_file():
+        candidates = [source]
+        base = source.parent
+    else:
+        base = source
+        candidates = [path for path in source.rglob("*") if path.is_file()]
+    selected: list[Path] = []
+    for path in candidates:
+        rel = path.relative_to(base).as_posix()
+        if include_patterns and not path_matches_patterns(rel, include_patterns):
+            continue
+        if exclude_patterns and path_matches_patterns(rel, exclude_patterns):
+            continue
+        selected.append(path)
+    return selected
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def copy_dew_drive_selection(source: Path, staging: Path, profile: DewDriveProfile) -> list[dict[str, object]]:
+    include_patterns = list(profile.include_patterns or [])
+    exclude_patterns = [".git/*", REPO_DIR_NAME + "/*", ARCHIVE_DIR_NAME + "/*", *list(profile.exclude_patterns or [])]
+    files = selected_dew_drive_files(source, include_patterns, exclude_patterns)
+    if not files:
+        raise DewError(f"No files matched Dew Drive profile: {profile.name}")
+    base = source.parent if source.is_file() else source
+    manifest: list[dict[str, object]] = []
+    for source_file in files:
+        relative = source_file.relative_to(base)
+        target = staging / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_file, target)
+        stat = source_file.stat()
+        manifest.append({
+            "path": relative.as_posix(),
+            "size": stat.st_size,
+            "mtime": dt.datetime.fromtimestamp(stat.st_mtime, dt.timezone.utc).isoformat(),
+            "sha256": sha256_file(source_file),
+        })
+    return manifest
+
+
+def encrypt_dew_drive_staging(staging: Path, output_dir: Path, password: str, mode: str) -> Path:
+    mode = mode.lower()
+    if mode in {"7z", "7zip", "archive"}:
+        seven_zip = find_executable(
+            "7z",
+            [
+                Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "7-Zip" / "7z.exe",
+                Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)")) / "7-Zip" / "7z.exe",
+            ],
+        )
+        payload = output_dir / DEW_DRIVE_PAYLOAD_NAME
+        items = [str(item) for item in staging.iterdir()]
+        run([str(seven_zip), "a", "-t7z", "-mx=9", f"-p{password}", "-mhe=on", str(payload), *items])
+        return payload
+    if mode in {"veracrypt", "vera", "vc"}:
+        container_source = output_dir / "payload-source"
+        shutil.copytree(staging, container_source)
+        container = veracrypt_create_container(container_source, password, keep_source=False)
+        payload = output_dir / "payload.dew.hc"
+        container.rename(payload)
+        return payload
+    raise DewError(f"Unsupported Dew Drive encryption mode: {mode}")
+
+
+def write_dew_drive_image_context(payload: Path, metadata: dict[str, object], build_context: Path) -> Path:
+    drive_dir = build_context / "dew-drive"
+    drive_dir.mkdir(parents=True, exist_ok=True)
+    payload_name = "payload.dew.hc" if payload.name.endswith(VERACRYPT_EXT) else DEW_DRIVE_PAYLOAD_NAME
+    staged_payload = drive_dir / payload_name
+    shutil.copy2(payload, staged_payload)
+    metadata_path = drive_dir / DEW_DRIVE_METADATA_NAME
+    metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+    (build_context / "Dockerfile").write_text(
+        "FROM scratch\n"
+        f"COPY dew-drive/{payload_name} /dew-drive/{payload_name}\n"
+        f"COPY dew-drive/{DEW_DRIVE_METADATA_NAME} /dew-drive/{DEW_DRIVE_METADATA_NAME}\n",
+        encoding="utf-8",
+    )
+    return metadata_path
+
+
+def assert_no_plaintext_in_build_context(build_context: Path) -> None:
+    allowed = {"Dockerfile", f"dew-drive/{DEW_DRIVE_PAYLOAD_NAME}", "dew-drive/payload.dew.hc", f"dew-drive/{DEW_DRIVE_METADATA_NAME}"}
+    for path in build_context.rglob("*"):
+        if path.is_file() and path.relative_to(build_context).as_posix() not in allowed:
+            raise DewError(f"Unexpected plaintext candidate in Docker build context: {path}")
+
+
+def dew_drive_sync(name: str, push: bool = False, registry: str | None = None, password: str | None = None) -> DewDriveSyncResult:
+    profile = find_dew_drive_profile(name)
+    source = Path(profile.local_path).expanduser().resolve()
+    if not profile.local_path or not source.exists():
+        raise DewError(f"Dew Drive local path does not exist for {name}: {source}")
+    image = registry or profile.registry or f"dew-drive-{profile.name.lower().replace(' ', '-')}:latest"
+    password = password or os.environ.get("DEW_DRIVE_PASSWORD")
+    if not password:
+        password = getpass.getpass("Dew Drive encryption password: ")
+    if not password:
+        raise DewError("A Dew Drive encryption password is required.")
+    with (
+        tempfile.TemporaryDirectory(prefix="dew-drive-staging-") as staging_dir,
+        tempfile.TemporaryDirectory(prefix="dew-drive-encrypted-") as encrypted_dir,
+        tempfile.TemporaryDirectory(prefix="dew-drive-build-") as build_dir,
+    ):
+        staging = Path(staging_dir)
+        encrypted = Path(encrypted_dir)
+        build_context = Path(build_dir)
+        manifest = copy_dew_drive_selection(source, staging, profile)
+        payload = encrypt_dew_drive_staging(staging, encrypted, password, profile.encryption_mode)
+        metadata = {
+            "drive_name": profile.name,
+            "timestamp": dt.datetime.now(dt.timezone.utc).isoformat(),
+            "source_platform": platform.platform(),
+            "encryption_mode": profile.encryption_mode,
+            "app_version": app_version(),
+            "source": str(source),
+            "manifest": manifest,
+        }
+        metadata_path = write_dew_drive_image_context(payload, metadata, build_context)
+        assert_no_plaintext_in_build_context(build_context)
+        docker = find_executable("docker")
+        run([str(docker), "build", "-t", image, str(build_context)])
+        should_push = push or profile.auto_push
+        if should_push:
+            run([str(docker), "push", image])
+        return DewDriveSyncResult(profile, source, image, build_context, build_context / "dew-drive" / payload.name, metadata_path, should_push)
+
 def watch(paths: list[Path], interval: float = 5.0, once: bool = False) -> None:
     last_commit = ""
     while True:
@@ -675,6 +871,24 @@ def watch(paths: list[Path], interval: float = 5.0, once: bool = False) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv[:2] == ["dew-drive", "sync"]:
+        parser = argparse.ArgumentParser(prog="dew-encryption dew-drive sync", description="Encrypt a Dew Drive profile and publish it as a Docker/OCI image.")
+        parser.add_argument("name", help="Dew Drive profile name.")
+        parser.add_argument("--push", action="store_true", help="Push the image after a successful Docker build.")
+        parser.add_argument("--registry", help="Docker/OCI image tag, for example ghcr.io/user/drive:latest.")
+        args = parser.parse_args(argv[2:])
+        try:
+            result = dew_drive_sync(args.name, push=args.push, registry=args.registry)
+        except DewError as exc:
+            print(f"dew encryption failed: {exc}", file=sys.stderr)
+            return 1
+        print(f"Dew Drive image: {result.image}")
+        print(f"Payload: /dew-drive/{result.payload.name}")
+        print(f"Metadata: /dew-drive/{result.metadata.name}")
+        if result.pushed:
+            print("Pushed: yes")
+        return 0
+
     if argv and argv[0] == "portable":
         parser = argparse.ArgumentParser(prog="dew-encryption portable", description="Manage portable mode.")
         parser.add_argument("--init", action="store_true", help="Create portable.flag beside the app so settings are stored portably.")
