@@ -11,19 +11,33 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          choco install innosetup -y
+          .\scripts\build-windows-installer.ps1
       - name: Create install bundle
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path dist\dew-encryption | Out-Null
-          Copy-Item dew_encryption,installer,docs -Destination dist\dew-encryption -Recurse
+          Copy-Item dew_encryption,installer,docs,linux,assets,scripts -Destination dist\dew-encryption -Recurse
           Copy-Item README.md,LICENSE,pyproject.toml -Destination dist\dew-encryption
           Compress-Archive -Path dist\dew-encryption\* -DestinationPath dist\dew-encryption.zip -Force
       - uses: actions/upload-artifact@v4
         with:
           name: dew-encryption
           path: dist/dew-encryption.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DewEncryptionSetup
+          path: dist/installer/DewEncryptionSetup.exe
       - name: Publish GitHub release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/dew-encryption.zip
+          files: |
+            dist/dew-encryption.zip
+            dist/installer/DewEncryptionSetup.exe

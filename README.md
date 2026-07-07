@@ -6,18 +6,20 @@ It also includes a simple GUI file manager for selecting files and running the s
 
 ## Screenshots
 
+![Dew Encryption Logo](assets/icons/dew-main.png)
+
 ![Dew Encryption GUI](docs/screenshots/gui.svg)
 
 ![Explorer menu mockup](docs/screenshots/explorer-menu.svg)
 
 ## Requirements
 
-- Windows 10 or later
+- Windows 10 or later, or Linux with a desktop session
 - Python 3.10+
-- Git for Windows
-- 7-Zip with `7z.exe` available on `PATH`, or installed in the standard `Program Files\7-Zip` location
+- Git
+- 7-Zip with `7z` available on `PATH`
 
-## Install
+## Windows Install
 
 Fully automated install, including dependencies when `winget` is available:
 
@@ -37,6 +39,59 @@ powershell -ExecutionPolicy Bypass -File .\installer\install-context-menu.ps1
 ```
 
 The installer writes only to `HKCU`, so it does not require administrator rights. The menu entry is registered for files, folders, and folder background right-clicks, and it does not require holding Shift.
+
+Full Windows `.exe` installer:
+
+```powershell
+.\scripts\build-windows-installer.ps1
+```
+
+The release workflow builds `DewEncryptionSetup.exe` with Inno Setup. It installs CLI and GUI executables, Start Menu entries, app icons, and Explorer right-click actions.
+
+## Linux Install
+
+```bash
+git clone https://github.com/codingmachineedge/dew-encryption.git
+cd dew-encryption
+bash linux/install.sh
+```
+
+The Linux installer installs the Python package for the current user, adds a desktop launcher, installs the app icon, and adds Nautilus scripts where supported.
+
+Linux uninstall:
+
+```bash
+bash linux/uninstall.sh
+```
+
+## Full CLI Mode
+
+Available on Windows and Linux:
+
+```powershell
+dew-encryption --help
+dew-encryption C:\Path\To\Folder
+dew-encryption watch C:\Path\To\Folder --interval 5
+dew-encryption history "C:\Path\To\Folder\Dew Encryption Archives\.dew-encryption-repo"
+dew-encryption details "C:\Path\To\Folder\Dew Encryption Archives\.dew-encryption-repo" abc1234
+dew-encryption restore "C:\Path\To\Folder\Dew Encryption Archives\.dew-encryption-repo" abc1234 C:\Path\To\Folder
+```
+
+On Linux, use normal POSIX paths with the same commands.
+
+## Full GUI Mode
+
+Available on Windows and Linux:
+
+```powershell
+dew-encryption-gui
+```
+
+Open directly to a folder's history manager:
+
+```powershell
+dew-encryption-gui C:\Path\To\Folder --history
+```
 
 ## GitHub Pages
 

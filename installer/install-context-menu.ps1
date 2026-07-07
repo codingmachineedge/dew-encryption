@@ -26,7 +26,15 @@ $keys = @(
 foreach ($item in $keys) {
     New-Item -Path $item.Path -Force | Out-Null
     New-ItemProperty -Path $item.Path -Name "MUIVerb" -Value $item.Verb -PropertyType String -Force | Out-Null
-    New-ItemProperty -Path $item.Path -Name "Icon" -Value "imageres.dll,-102" -PropertyType String -Force | Out-Null
+    $icon = "imageres.dll,-102"
+    if ($item.Path -like "*dew-encryption-watch") {
+        $icon = Join-Path $ProjectRoot "assets\icons\dew-watch.ico"
+    } elseif ($item.Path -like "*dew-encryption-manager") {
+        $icon = Join-Path $ProjectRoot "assets\icons\dew-history.ico"
+    } elseif ($item.Path -like "*dew-encryption") {
+        $icon = Join-Path $ProjectRoot "assets\icons\dew-archive.ico"
+    }
+    New-ItemProperty -Path $item.Path -Name "Icon" -Value $icon -PropertyType String -Force | Out-Null
     New-ItemProperty -Path $item.Path -Name "AppliesTo" -Value "" -PropertyType String -Force | Out-Null
     $commandKey = Join-Path $item.Path "command"
     New-Item -Path $commandKey -Force | Out-Null
