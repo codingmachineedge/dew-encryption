@@ -13,9 +13,11 @@ from .core import (
     commit_details,
     create_archive_for_repo,
     history,
+    load_settings,
     process,
     repo_for_source,
     restore_commit,
+    save_settings,
     snapshot,
 )
 
@@ -30,6 +32,8 @@ class DewFileManager(tk.Tk):
         self.events: queue.Queue[str] = queue.Queue()
         self.watch_stop = threading.Event()
         self.watch_thread: threading.Thread | None = None
+        self.settings = load_settings()
+        self.setting_vars: dict[str, tk.Variable] = {}
         self._build()
         for path in initial_paths or []:
             self._add(path)
@@ -104,6 +108,33 @@ class DewFileManager(tk.Tk):
         self.details.grid(row=1, column=1, sticky="nsew")
         self.details.insert("end", "Select a commit to view details and changed files.\n")
         self.details.configure(state="disabled")
+
+        settings_tab = ttk.Frame(self.notebook, padding=10)
+        self.notebook.add(settings_tab, text="VeraCrypt")
+        settings_tab.columnconfigure(1, weight=1)
+        vc = self.settings.veracrypt
+        fields = [
+            ("Encryption", "encryption", vc.encryption),
+            ("Hash", "hash", vc.hash),
+            ("Filesystem", "filesystem", vc.filesystem),
+            ("PIM", "pim", vc.pim),
+            ("Size padding MB", "size_padding_mb", str(vc.size_padding_mb)),
+            ("Size multiplier", "size_multiplier", str(vc.size_multiplier)),
+            ("Minimum size MB", "minimum_size_mb", str(vc.minimum_size_mb)),
+            ("VeraCrypt path", "veracrypt_path", vc.veracrypt_path),
+        ]
+        for row, (label, key, value) in enumerate(fields):
+            ttk.Label(settings_tab, text=label).grid(row=row, column=0, sticky="w", pady=4)
+            var = tk.StringVar(value=value)
+            self.setting_vars[key] = var
+            ttk.Entry(settings_tab, textvariable=var).grid(row=row, column=1, sticky="ew", pady=4, padx=(10, 0))
+        keep_source = tk.BooleanVar(value=vc.keep_source_after_encrypt)
+        keep_container = tk.BooleanVar(value=vc.keep_container_after_decrypt)
+        self.setting_vars["keep_source_after_encrypt"] = keep_source
+        self.setting_vars["keep_container_after_decrypt"] = keep_container
+        ttk.Checkbutton(settings_tab, text="Keep original after VeraCrypt encrypt", variable=keep_source).grid(row=len(fields), column=0, columnspan=2, sticky="w", pady=4)
+        ttk.Checkbutton(settings_tab, text="Keep container after VeraCrypt decrypt", variable=keep_container).grid(row=len(fields) + 1, column=0, columnspan=2, sticky="w", pady=4)
+        ttk.Button(settings_tab, text="Save VeraCrypt Settings", command=self.save_veracrypt_settings).grid(row=len(fields) + 2, column=0, sticky="w", pady=(12, 0))
 
     def add_files(self) -> None:
         for item in filedialog.askopenfilenames(title="Select files"):
@@ -202,6 +233,25 @@ class DewFileManager(tk.Tk):
         repo = self._active_repo()
         if repo:
             subprocess.Popen(["explorer", str(repo)])
+
+    def save_veracrypt_settings(self) -> None:
+        vc = self.settings.veracrypt
+        try:
+            vc.encryption = str(self.setting_vars["encryption"].get())
+            vc.hash = str(self.setting_vars["hash"].get())
+            vc.filesystem = str(self.setting_vars["filesystem"].get())
+            vc.pim = str(self.setting_vars["pim"].get())
+            vc.size_padding_mb = int(str(self.setting_vars["size_padding_mb"].get()))
+            vc.size_multiplier = float(str(self.setting_vars["size_multiplier"].get()))
+            vc.minimum_size_mb = int(str(self.setting_vars["minimum_size_mb"].get()))
+            vc.veracrypt_path = str(self.setting_vars["veracrypt_path"].get())
+            vc.keep_source_after_encrypt = bool(self.setting_vars["keep_source_after_encrypt"].get())
+            vc.keep_container_after_decrypt = bool(self.setting_vars["keep_container_after_decrypt"].get())
+        except ValueError as exc:
+            messagebox.showerror("VeraCrypt Settings", f"Invalid numeric setting: {exc}")
+            return
+        save_settings(self.settings)
+        self._log("VeraCrypt settings saved.")
 
     def refresh_history(self) -> None:
         for item in self.history_tree.get_children():

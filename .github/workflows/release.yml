@@ -19,6 +19,15 @@ jobs:
         run: |
           choco install innosetup -y
           .\scripts\build-windows-installer.ps1
+      - name: Create portable Windows app
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist\DewEncryptionPortable\icons | Out-Null
+          Copy-Item dist\app\dew-encryption.exe,dist\app\dew-encryption-gui.exe -Destination dist\DewEncryptionPortable
+          Copy-Item assets\icons\*.ico,assets\icons\*.png -Destination dist\DewEncryptionPortable\icons
+          Copy-Item README.md,LICENSE -Destination dist\DewEncryptionPortable
+          Set-Content -Path dist\DewEncryptionPortable\portable.flag -Value "portable"
+          Compress-Archive -Path dist\DewEncryptionPortable\* -DestinationPath dist\DewEncryptionPortable.zip -Force
       - name: Create install bundle
         shell: pwsh
         run: |
@@ -34,6 +43,10 @@ jobs:
         with:
           name: DewEncryptionSetup
           path: dist/installer/DewEncryptionSetup.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DewEncryptionPortable
+          path: dist/DewEncryptionPortable.zip
       - name: Publish GitHub release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
@@ -41,3 +54,4 @@ jobs:
           files: |
             dist/dew-encryption.zip
             dist/installer/DewEncryptionSetup.exe
+            dist/DewEncryptionPortable.zip

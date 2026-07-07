@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import getpass
+import json
 import os
 import shutil
 import subprocess
@@ -11,6 +12,7 @@ import tempfile
 import time
 import zipfile
 from dataclasses import dataclass
+from dataclasses import asdict
 from pathlib import Path
 
 
@@ -18,6 +20,22 @@ APP_NAME = "Dew Encryption"
 REPO_DIR_NAME = ".dew-encryption-repo"
 ARCHIVE_DIR_NAME = "Dew Encryption Archives"
 VERACRYPT_EXT = ".dew.hc"
+
+
+def app_base_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent.parent
+
+
+def config_file() -> Path:
+    explicit = os.environ.get("DEW_ENCRYPTION_CONFIG")
+    if explicit:
+        return Path(explicit).expanduser().resolve()
+    base = app_base_dir()
+    if os.environ.get("DEW_ENCRYPTION_PORTABLE") == "1" or (base / "portable.flag").exists():
+        return base / "settings.json"
+    return Path(os.environ.get("APPDATA") or Path.home() / ".config") / "DewEncryption" / "settings.json"
 
 
 class DewError(RuntimeError):
@@ -45,6 +63,50 @@ class FileChange:
     path: str
 
 
+@dataclass
+class VeraCryptSettings:
+    encryption: str = "AES"
+    hash: str = "SHA-512"
+    filesystem: str = "exFAT"
+    pim: str = "0"
+    size_padding_mb: int = 64
+    size_multiplier: float = 1.25
+    minimum_size_mb: int = 32
+    keep_source_after_encrypt: bool = False
+    keep_container_after_decrypt: bool = True
+    veracrypt_path: str = ""
+
+
+@dataclass
+class AppSettings:
+    veracrypt: VeraCryptSettings
+
+
+def default_settings() -> AppSettings:
+    return AppSettings(veracrypt=VeraCryptSettings())
+
+
+def load_settings() -> AppSettings:
+    path = config_file()
+    if not path.exists():
+        return default_settings()
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return default_settings()
+    vc_raw = raw.get("veracrypt", {}) if isinstance(raw, dict) else {}
+    defaults = VeraCryptSettings()
+    values = asdict(defaults)
+    values.update({key: value for key, value in vc_raw.items() if key in values})
+    return AppSettings(veracrypt=VeraCryptSettings(**values))
+
+
+def save_settings(settings: AppSettings) -> None:
+    path = config_file()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(asdict(settings), indent=2), encoding="utf-8")
+
+
 def find_executable(name: str, fallbacks: list[Path] | None = None) -> Path:
     found = shutil.which(name)
     if found:
@@ -56,6 +118,9 @@ def find_executable(name: str, fallbacks: list[Path] | None = None) -> Path:
 
 
 def find_veracrypt() -> Path:
+    configured = load_settings().veracrypt.veracrypt_path
+    if configured and Path(configured).exists():
+        return Path(configured)
     names = ["VeraCrypt.exe", "veracrypt.exe"] if os.name == "nt" else ["veracrypt"]
     for name in names:
         found = shutil.which(name)
@@ -295,7 +360,8 @@ def source_path_for_container(container: Path) -> Path:
     return container.with_name(container.name + ".decrypted")
 
 
-def estimated_container_size(source: Path) -> str:
+def estimated_container_size(source: Path, settings: VeraCryptSettings | None = None) -> str:
+    settings = settings or load_settings().veracrypt
     size = 0
     if source.is_dir():
         for item in source.rglob("*"):
@@ -303,7 +369,11 @@ def estimated_container_size(source: Path) -> str:
                 size += item.stat().st_size
     else:
         size = source.stat().st_size
-    padded = max(size + 64 * 1024 * 1024, int(size * 1.25) + 16 * 1024 * 1024, 32 * 1024 * 1024)
+    padded = max(
+        size + settings.size_padding_mb * 1024 * 1024,
+        int(size * settings.size_multiplier) + 16 * 1024 * 1024,
+        settings.minimum_size_mb * 1024 * 1024,
+    )
     return f"{padded // (1024 * 1024)}M"
 
 
@@ -350,7 +420,14 @@ def copy_from_mount(mount_root: Path, output: Path) -> None:
             shutil.copy2(item, target)
 
 
-def veracrypt_create_container(source: Path, password: str, keep_source: bool = False) -> Path:
+def veracrypt_create_container(
+    source: Path,
+    password: str,
+    keep_source: bool | None = None,
+    settings: VeraCryptSettings | None = None,
+) -> Path:
+    settings = settings or load_settings().veracrypt
+    keep_source = settings.keep_source_after_encrypt if keep_source is None else keep_source
     source = source.resolve()
     if not source.exists():
         raise DewError(f"Source does not exist: {source}")
@@ -358,17 +435,17 @@ def veracrypt_create_container(source: Path, password: str, keep_source: bool = 
     container = container_path_for_source(source)
     if container.exists():
         raise DewError(f"Container already exists: {container}")
-    size = estimated_container_size(source)
+    size = estimated_container_size(source, settings)
 
     if os.name == "nt":
         run([
             str(vc), "/create", str(container), "/size", size, "/password", password,
-            "/encryption", "AES", "/hash", "SHA-512", "/filesystem", "exFAT",
-            "/pim", "0", "/silent", "/force", "/quit",
+            "/encryption", settings.encryption, "/hash", settings.hash, "/filesystem", settings.filesystem,
+            "/pim", settings.pim, "/silent", "/force", "/quit",
         ])
         letter = free_windows_drive_letter()
         try:
-            run([str(vc), "/volume", str(container), "/letter", letter, "/password", password, "/pim", "0", "/silent", "/quit"])
+            run([str(vc), "/volume", str(container), "/letter", letter, "/password", password, "/pim", settings.pim, "/silent", "/quit"])
             mount_root = Path(f"{letter}:\\")
             copy_into_mount(source, mount_root)
         finally:
@@ -377,13 +454,13 @@ def veracrypt_create_container(source: Path, password: str, keep_source: bool = 
         random_source = source if source.is_file() else next((p for p in source.rglob("*") if p.is_file()), source)
         run([
             str(vc), "--text", "--create", str(container), "--size", size, "--password", password,
-            "--encryption", "AES", "--hash", "SHA-512", "--filesystem", "exFAT",
-            "--pim", "0", "--keyfiles", "", "--random-source", str(random_source), "--non-interactive",
+            "--encryption", settings.encryption, "--hash", settings.hash, "--filesystem", settings.filesystem,
+            "--pim", settings.pim, "--keyfiles", "", "--random-source", str(random_source), "--non-interactive",
         ])
         with tempfile.TemporaryDirectory(prefix="dew-vc-mount-") as mount_dir:
             mount_root = Path(mount_dir)
             try:
-                run([str(vc), "--text", "--mount", str(container), str(mount_root), "--password", password, "--pim", "0", "--keyfiles", "", "--protect-hidden", "no", "--non-interactive"])
+                run([str(vc), "--text", "--mount", str(container), str(mount_root), "--password", password, "--pim", settings.pim, "--keyfiles", "", "--protect-hidden", "no", "--non-interactive"])
                 copy_into_mount(source, mount_root)
             finally:
                 run([str(vc), "--text", "--dismount", str(container)])
@@ -396,7 +473,15 @@ def veracrypt_create_container(source: Path, password: str, keep_source: bool = 
     return container
 
 
-def veracrypt_decrypt_container(container: Path, password: str, output: Path | None = None, keep_container: bool = True) -> Path:
+def veracrypt_decrypt_container(
+    container: Path,
+    password: str,
+    output: Path | None = None,
+    keep_container: bool | None = None,
+    settings: VeraCryptSettings | None = None,
+) -> Path:
+    settings = settings or load_settings().veracrypt
+    keep_container = settings.keep_container_after_decrypt if keep_container is None else keep_container
     container = container.resolve()
     if not container.exists():
         raise DewError(f"Container does not exist: {container}")
@@ -406,7 +491,7 @@ def veracrypt_decrypt_container(container: Path, password: str, output: Path | N
     if os.name == "nt":
         letter = free_windows_drive_letter()
         try:
-            run([str(vc), "/volume", str(container), "/letter", letter, "/password", password, "/pim", "0", "/silent", "/quit"])
+            run([str(vc), "/volume", str(container), "/letter", letter, "/password", password, "/pim", settings.pim, "/silent", "/quit"])
             copy_from_mount(Path(f"{letter}:\\"), output)
         finally:
             run([str(vc), "/dismount", letter, "/silent", "/quit"])
@@ -414,7 +499,7 @@ def veracrypt_decrypt_container(container: Path, password: str, output: Path | N
         with tempfile.TemporaryDirectory(prefix="dew-vc-mount-") as mount_dir:
             mount_root = Path(mount_dir)
             try:
-                run([str(vc), "--text", "--mount", str(container), str(mount_root), "--password", password, "--pim", "0", "--keyfiles", "", "--protect-hidden", "no", "--non-interactive"])
+                run([str(vc), "--text", "--mount", str(container), str(mount_root), "--password", password, "--pim", settings.pim, "--keyfiles", "", "--protect-hidden", "no", "--non-interactive"])
                 copy_from_mount(mount_root, output)
             finally:
                 run([str(vc), "--text", "--dismount", str(container)])
@@ -438,17 +523,80 @@ def watch(paths: list[Path], interval: float = 5.0, once: bool = False) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] == "portable":
+        parser = argparse.ArgumentParser(prog="dew-encryption portable", description="Manage portable mode.")
+        parser.add_argument("--init", action="store_true", help="Create portable.flag beside the app so settings are stored portably.")
+        parser.add_argument("--show", action="store_true", help="Show portable state and settings path.")
+        args = parser.parse_args(argv[1:])
+        marker = app_base_dir() / "portable.flag"
+        if args.init:
+            marker.write_text("portable\n", encoding="utf-8")
+        print(json.dumps({
+            "app_base": str(app_base_dir()),
+            "portable": os.environ.get("DEW_ENCRYPTION_PORTABLE") == "1" or marker.exists(),
+            "portable_marker": str(marker),
+            "settings": str(config_file()),
+        }, indent=2))
+        return 0
+
+    if argv and argv[0] == "veracrypt-settings":
+        parser = argparse.ArgumentParser(prog="dew-encryption veracrypt-settings", description="Show or update remembered VeraCrypt defaults.")
+        parser.add_argument("--show", action="store_true", help="Show current VeraCrypt settings as JSON.")
+        parser.add_argument("--encryption", help="VeraCrypt encryption algorithm.")
+        parser.add_argument("--hash", help="VeraCrypt hash algorithm.")
+        parser.add_argument("--filesystem", help="Container filesystem.")
+        parser.add_argument("--pim", help="VeraCrypt PIM value.")
+        parser.add_argument("--size-padding-mb", type=int, help="Extra MB added to estimated source size.")
+        parser.add_argument("--size-multiplier", type=float, help="Multiplier applied to source size estimate.")
+        parser.add_argument("--minimum-size-mb", type=int, help="Minimum container size in MB.")
+        parser.add_argument("--veracrypt-path", help="Explicit VeraCrypt executable path.")
+        parser.add_argument("--keep-source-after-encrypt", choices=["true", "false"], help="Remember whether encrypt keeps original source.")
+        parser.add_argument("--keep-container-after-decrypt", choices=["true", "false"], help="Remember whether decrypt keeps the container.")
+        args = parser.parse_args(argv[1:])
+        settings = load_settings()
+        vc = settings.veracrypt
+        if args.encryption:
+            vc.encryption = args.encryption
+        if args.hash:
+            vc.hash = args.hash
+        if args.filesystem:
+            vc.filesystem = args.filesystem
+        if args.pim:
+            vc.pim = args.pim
+        if args.size_padding_mb is not None:
+            vc.size_padding_mb = args.size_padding_mb
+        if args.size_multiplier is not None:
+            vc.size_multiplier = args.size_multiplier
+        if args.minimum_size_mb is not None:
+            vc.minimum_size_mb = args.minimum_size_mb
+        if args.veracrypt_path is not None:
+            vc.veracrypt_path = args.veracrypt_path
+        if args.keep_source_after_encrypt is not None:
+            vc.keep_source_after_encrypt = args.keep_source_after_encrypt == "true"
+        if args.keep_container_after_decrypt is not None:
+            vc.keep_container_after_decrypt = args.keep_container_after_decrypt == "true"
+        if not args.show:
+            save_settings(settings)
+        print(json.dumps(asdict(settings), indent=2))
+        return 0
+
     if argv and argv[0] == "veracrypt-encrypt":
         parser = argparse.ArgumentParser(prog="dew-encryption veracrypt-encrypt", description="Move a file or folder into a VeraCrypt container.")
         parser.add_argument("source", help="File or folder to encrypt into a VeraCrypt container.")
         parser.add_argument("--password", help="VeraCrypt container password. If omitted, a hidden prompt is shown.")
         parser.add_argument("--keep-source", action="store_true", help="Keep the original file or folder after the container is created.")
+        parser.add_argument("--remove-source", action="store_true", help="Remove the original file or folder after the container is created.")
         args = parser.parse_args(argv[1:])
         try:
             password = args.password or getpass.getpass("VeraCrypt password: ")
             if not password:
                 raise DewError("A VeraCrypt password is required.")
-            container = veracrypt_create_container(Path(args.source), password, keep_source=args.keep_source)
+            keep_source = None
+            if args.keep_source:
+                keep_source = True
+            if args.remove_source:
+                keep_source = False
+            container = veracrypt_create_container(Path(args.source), password, keep_source=keep_source)
         except DewError as exc:
             print(f"dew encryption failed: {exc}", file=sys.stderr)
             return 1
@@ -461,6 +609,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.add_argument("--password", help="VeraCrypt container password. If omitted, a hidden prompt is shown.")
         parser.add_argument("--output", help="Output file or folder path. Defaults beside the container.")
         parser.add_argument("--remove-container", action="store_true", help="Delete the container after successful extraction.")
+        parser.add_argument("--keep-container", action="store_true", help="Keep the container after successful extraction.")
         args = parser.parse_args(argv[1:])
         try:
             password = args.password or getpass.getpass("VeraCrypt password: ")
@@ -470,7 +619,7 @@ def main(argv: list[str] | None = None) -> int:
                 Path(args.container),
                 password,
                 output=Path(args.output) if args.output else None,
-                keep_container=not args.remove_container,
+                keep_container=True if args.keep_container else (False if args.remove_container else None),
             )
         except DewError as exc:
             print(f"dew encryption failed: {exc}", file=sys.stderr)

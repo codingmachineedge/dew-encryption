@@ -84,6 +84,8 @@ jobs:
           python -m dew_encryption details "${repo}" "${commit}"
           python -m dew_encryption veracrypt-encrypt --help
           python -m dew_encryption veracrypt-decrypt --help
+          python -m dew_encryption veracrypt-settings --show
+          python -m dew_encryption portable --show
       - name: Validate Linux integration files
         run: |
           bash -n linux/install.sh

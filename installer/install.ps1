@@ -33,12 +33,20 @@ if (-not (Test-Command 7z)) {
     Install-WingetPackage "7zip.7zip"
 }
 
+if (-not (Test-Command VeraCrypt)) {
+    Install-WingetPackage "IDRIX.VeraCrypt"
+}
+
 if (-not (Test-Command git)) {
     $env:Path = "$env:ProgramFiles\Git\cmd;$env:Path"
 }
 
 if (-not (Test-Command 7z)) {
     $env:Path = "$env:ProgramFiles\7-Zip;$env:Path"
+}
+
+if (-not (Test-Command VeraCrypt)) {
+    $env:Path = "$env:ProgramFiles\VeraCrypt;$env:Path"
 }
 
 if (-not (Test-Command python)) {
@@ -49,6 +57,9 @@ if (-not (Test-Command git)) {
 }
 if (-not (Test-Command 7z)) {
     throw "7-Zip is still not available after dependency installation."
+}
+if (-not (Test-Command VeraCrypt)) {
+    Write-Warning "VeraCrypt is not available. Git/7-Zip actions will work, but VeraCrypt encrypt/decrypt needs VeraCrypt installed."
 }
 
 New-Item -ItemType Directory -Path $InstallRoot -Force | Out-Null

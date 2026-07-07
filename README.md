@@ -49,6 +49,22 @@ Full Windows `.exe` installer:
 
 The release workflow builds `DewEncryptionSetup.exe` with Inno Setup. It installs CLI and GUI executables, Start Menu entries, app icons, and Explorer right-click actions.
 
+Portable Windows build:
+
+- Download `DewEncryptionPortable.zip` from the release workflow artifacts or tagged releases.
+- Extract it anywhere.
+- Run `dew-encryption-gui.exe` for GUI mode or `dew-encryption.exe --help` for CLI mode.
+- Settings are stored in `settings.json` beside the portable executables because the zip includes `portable.flag`.
+
+To turn any local checkout or executable folder into portable mode:
+
+```powershell
+dew-encryption portable --init
+dew-encryption portable --show
+```
+
+Portable mode can also be forced with `DEW_ENCRYPTION_PORTABLE=1`, or a custom settings path can be supplied with `DEW_ENCRYPTION_CONFIG`.
+
 ## Linux Install
 
 ```bash
@@ -131,7 +147,7 @@ Files and folders also get VeraCrypt container actions:
 - `dew encryption VeraCrypt encrypt` creates a `.dew.hc` VeraCrypt container, copies the selected file or folder into it, dismounts the container, and removes the original by default.
 - `.hc` files get `dew encryption VeraCrypt decrypt`, which mounts the container and restores the contents beside it.
 
-These actions prompt for the VeraCrypt password in a console window. VeraCrypt must be installed separately.
+These actions prompt for the VeraCrypt password in a console window. The automated PowerShell installer tries to install VeraCrypt with `winget`; the full Windows installer also includes an optional VeraCrypt dependency task.
 
 ## Use The GUI
 
@@ -186,7 +202,21 @@ To restore a file or folder to a specific commit:
 dew-encryption restore "C:\Path\To\Folder\Dew Encryption Archives\.dew-encryption-repo" abc1234 C:\Path\To\Folder
 dew-encryption veracrypt-encrypt C:\Path\To\File.txt
 dew-encryption veracrypt-decrypt C:\Path\To\File.txt.dew.hc
+dew-encryption veracrypt-settings --show
 ```
+
+## VeraCrypt Settings
+
+The GUI has a `VeraCrypt` tab for remembered defaults. The CLI can update the same settings:
+
+```powershell
+dew-encryption veracrypt-settings --encryption AES --hash SHA-512 --filesystem exFAT --pim 0
+dew-encryption veracrypt-settings --size-padding-mb 64 --size-multiplier 1.25 --minimum-size-mb 32
+dew-encryption veracrypt-settings --keep-source-after-encrypt false --keep-container-after-decrypt true
+dew-encryption veracrypt-settings --veracrypt-path "C:\Program Files\VeraCrypt\VeraCrypt.exe"
+```
+
+Settings are remembered under the user profile. Passwords are intentionally not remembered in plaintext; right-click actions prompt for the VeraCrypt password.
 
 ## Optional Encrypted Archive
 
