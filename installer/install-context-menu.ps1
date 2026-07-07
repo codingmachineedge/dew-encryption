@@ -15,6 +15,8 @@ $ManagerBackgroundCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Comm
 $VeraCryptEncryptCommand = "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption veracrypt-encrypt '%1'; Read-Host 'Press Enter to close' }`""
 $VeraCryptFolderEncryptCommand = "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption veracrypt-encrypt '%1'; Read-Host 'Press Enter to close' }`""
 $VeraCryptDecryptCommand = "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption veracrypt-decrypt '%1'; Read-Host 'Press Enter to close' }`""
+$CreateTasksCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File `"$EscapedRoot\installer\create-elevated-tasks.ps1`" -Python `"$EscapedPython`"' }`""
+$RemoveTasksCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File `"$EscapedRoot\installer\remove-elevated-tasks.ps1`"' }`""
 
 $keys = @(
     @{ Path = "HKCU:\Software\Classes\*\shell\dew-encryption"; Verb = "dew encryption"; Command = $Command },
@@ -26,7 +28,9 @@ $keys = @(
     @{ Path = "HKCU:\Software\Classes\Directory\Background\shell\dew-encryption-manager"; Verb = "dew encryption file history manager"; Command = $ManagerBackgroundCommand },
     @{ Path = "HKCU:\Software\Classes\*\shell\dew-encryption-veracrypt-encrypt"; Verb = "dew encryption VeraCrypt encrypt"; Command = $VeraCryptEncryptCommand },
     @{ Path = "HKCU:\Software\Classes\Directory\shell\dew-encryption-veracrypt-encrypt"; Verb = "dew encryption VeraCrypt encrypt"; Command = $VeraCryptFolderEncryptCommand },
-    @{ Path = "HKCU:\Software\Classes\.hc\shell\dew-encryption-veracrypt-decrypt"; Verb = "dew encryption VeraCrypt decrypt"; Command = $VeraCryptDecryptCommand }
+    @{ Path = "HKCU:\Software\Classes\.hc\shell\dew-encryption-veracrypt-decrypt"; Verb = "dew encryption VeraCrypt decrypt"; Command = $VeraCryptDecryptCommand },
+    @{ Path = "HKCU:\Software\Classes\Directory\Background\shell\dew-encryption-create-elevated-tasks"; Verb = "dew encryption create elevated tasks"; Command = $CreateTasksCommand },
+    @{ Path = "HKCU:\Software\Classes\Directory\Background\shell\dew-encryption-remove-elevated-tasks"; Verb = "dew encryption remove elevated tasks"; Command = $RemoveTasksCommand }
 )
 
 foreach ($item in $keys) {

@@ -65,6 +65,22 @@ dew-encryption portable --show
 
 Portable mode can also be forced with `DEW_ENCRYPTION_PORTABLE=1`, or a custom settings path can be supplied with `DEW_ENCRYPTION_CONFIG`.
 
+## Elevated Task Setup
+
+Dew Encryption does not bypass UAC. If you want scheduled tasks for elevated launches, use the explicit setup action:
+
+- Right-click a folder background.
+- Choose `dew encryption create elevated tasks`.
+- Approve the normal Windows administrator prompt.
+
+To remove them, choose `dew encryption remove elevated tasks` or run:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\installer\remove-elevated-tasks.ps1
+```
+
+The tasks are clearly named `DewEncryption.*.Elevated` and are created only after normal Windows consent.
+
 ## Linux Install
 
 ```bash

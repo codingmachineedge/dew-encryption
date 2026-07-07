@@ -31,6 +31,8 @@ Source: "..\dist\app\dew-encryption.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\app\dew-encryption-gui.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\installer\create-elevated-tasks.ps1"; DestDir: "{app}\installer"; Flags: ignoreversion
+Source: "..\installer\remove-elevated-tasks.ps1"; DestDir: "{app}\installer"; Flags: ignoreversion
 Source: "..\assets\icons\dew-main.ico"; DestDir: "{app}\icons"; Flags: ignoreversion
 Source: "..\assets\icons\dew-archive.ico"; DestDir: "{app}\icons"; Flags: ignoreversion
 Source: "..\assets\icons\dew-watch.ico"; DestDir: "{app}\icons"; Flags: ignoreversion
@@ -89,6 +91,14 @@ Root: HKCU; Subkey: "Software\Classes\Directory\shell\dew-encryption-veracrypt-e
 Root: HKCU; Subkey: "Software\Classes\.hc\shell\dew-encryption-veracrypt-decrypt"; ValueType: string; ValueName: "MUIVerb"; ValueData: "dew encryption VeraCrypt decrypt"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\.hc\shell\dew-encryption-veracrypt-decrypt"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\icons\dew-veracrypt-decrypt.ico"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\.hc\shell\dew-encryption-veracrypt-decrypt\command"; ValueType: string; ValueName: ""; ValueData: "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command ""& '{app}\{#MyAppExeName}' veracrypt-decrypt '%1'; Read-Host 'Press Enter to close'"""; Flags: uninsdeletekey
+
+Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\dew-encryption-create-elevated-tasks"; ValueType: string; ValueName: "MUIVerb"; ValueData: "dew encryption create elevated tasks"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\dew-encryption-create-elevated-tasks"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\icons\dew-main.ico"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\dew-encryption-create-elevated-tasks\command"; ValueType: string; ValueName: ""; ValueData: "powershell -NoProfile -ExecutionPolicy Bypass -Command ""Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File """"{app}\installer\create-elevated-tasks.ps1"""" -Python """"{app}\{#MyAppExeName}"""""'"""; Flags: uninsdeletekey
+
+Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\dew-encryption-remove-elevated-tasks"; ValueType: string; ValueName: "MUIVerb"; ValueData: "dew encryption remove elevated tasks"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\dew-encryption-remove-elevated-tasks"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\icons\dew-main.ico"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\dew-encryption-remove-elevated-tasks\command"; ValueType: string; ValueName: ""; ValueData: "powershell -NoProfile -ExecutionPolicy Bypass -Command ""Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File """"{app}\installer\remove-elevated-tasks.ps1"""""'"""; Flags: uninsdeletekey
 
 [Code]
 function CommandExists(Name: String): Boolean;
