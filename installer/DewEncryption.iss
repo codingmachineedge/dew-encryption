@@ -83,16 +83,19 @@ Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\dew-encryption-
 Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\dew-encryption-manager\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppGuiExeName}"" ""%V"" --history"; Flags: uninsdeletekey
 
 Root: HKCU; Subkey: "Software\Classes\*\shell\dew-encryption-veracrypt-encrypt"; ValueType: string; ValueName: "MUIVerb"; ValueData: "dew encryption VeraCrypt encrypt"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\*\shell\dew-encryption-veracrypt-encrypt"; ValueType: string; ValueName: "MultiSelectModel"; ValueData: "Player"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\*\shell\dew-encryption-veracrypt-encrypt"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\icons\dew-veracrypt-encrypt.ico"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\Classes\*\shell\dew-encryption-veracrypt-encrypt\command"; ValueType: string; ValueName: ""; ValueData: "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command ""& '{app}\{#MyAppExeName}' veracrypt-encrypt '%1'; Read-Host 'Press Enter to close'"""; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\*\shell\dew-encryption-veracrypt-encrypt\command"; ValueType: string; ValueName: ""; ValueData: "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command ""& '{app}\{#MyAppExeName}' veracrypt-encrypt '%1' %*; Read-Host 'Press Enter to close'"""; Flags: uninsdeletekey
 
 Root: HKCU; Subkey: "Software\Classes\Directory\shell\dew-encryption-veracrypt-encrypt"; ValueType: string; ValueName: "MUIVerb"; ValueData: "dew encryption VeraCrypt encrypt"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\Directory\shell\dew-encryption-veracrypt-encrypt"; ValueType: string; ValueName: "MultiSelectModel"; ValueData: "Player"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\Directory\shell\dew-encryption-veracrypt-encrypt"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\icons\dew-veracrypt-encrypt.ico"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\Classes\Directory\shell\dew-encryption-veracrypt-encrypt\command"; ValueType: string; ValueName: ""; ValueData: "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command ""& '{app}\{#MyAppExeName}' veracrypt-encrypt '%1'; Read-Host 'Press Enter to close'"""; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\Directory\shell\dew-encryption-veracrypt-encrypt\command"; ValueType: string; ValueName: ""; ValueData: "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command ""& '{app}\{#MyAppExeName}' veracrypt-encrypt '%1' %*; Read-Host 'Press Enter to close'"""; Flags: uninsdeletekey
 
 Root: HKCU; Subkey: "Software\Classes\.hc\shell\dew-encryption-veracrypt-decrypt"; ValueType: string; ValueName: "MUIVerb"; ValueData: "dew encryption VeraCrypt decrypt"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\.hc\shell\dew-encryption-veracrypt-decrypt"; ValueType: string; ValueName: "MultiSelectModel"; ValueData: "Player"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\.hc\shell\dew-encryption-veracrypt-decrypt"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\icons\dew-veracrypt-decrypt.ico"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\Classes\.hc\shell\dew-encryption-veracrypt-decrypt\command"; ValueType: string; ValueName: ""; ValueData: "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command ""& '{app}\{#MyAppExeName}' veracrypt-decrypt '%1'; Read-Host 'Press Enter to close'"""; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\.hc\shell\dew-encryption-veracrypt-decrypt\command"; ValueType: string; ValueName: ""; ValueData: "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command ""& '{app}\{#MyAppExeName}' veracrypt-decrypt '%1' %*; Read-Host 'Press Enter to close'"""; Flags: uninsdeletekey
 
 Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\dew-encryption-create-elevated-tasks"; ValueType: string; ValueName: "MUIVerb"; ValueData: "dew encryption create elevated tasks"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\dew-encryption-create-elevated-tasks"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\icons\dew-main.ico"; Flags: uninsdeletekey

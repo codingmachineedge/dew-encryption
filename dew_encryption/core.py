@@ -176,6 +176,19 @@ def selected_root(paths: list[Path]) -> Path:
     return common.resolve()
 
 
+def unique_paths(paths: list[str]) -> list[Path]:
+    seen: set[str] = set()
+    result: list[Path] = []
+    for item in paths:
+        path = Path(item).resolve()
+        key = str(path).casefold() if os.name == "nt" else str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(path)
+    return result
+
+
 def archive_output_dir(source: Path) -> Path:
     if source.is_file():
         base = source.parent
@@ -582,7 +595,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if argv and argv[0] == "veracrypt-encrypt":
         parser = argparse.ArgumentParser(prog="dew-encryption veracrypt-encrypt", description="Move a file or folder into a VeraCrypt container.")
-        parser.add_argument("source", help="File or folder to encrypt into a VeraCrypt container.")
+        parser.add_argument("sources", nargs="+", help="Files or folders to encrypt into VeraCrypt containers.")
         parser.add_argument("--password", help="VeraCrypt container password. If omitted, a hidden prompt is shown.")
         parser.add_argument("--keep-source", action="store_true", help="Keep the original file or folder after the container is created.")
         parser.add_argument("--remove-source", action="store_true", help="Remove the original file or folder after the container is created.")
@@ -596,16 +609,20 @@ def main(argv: list[str] | None = None) -> int:
                 keep_source = True
             if args.remove_source:
                 keep_source = False
-            container = veracrypt_create_container(Path(args.source), password, keep_source=keep_source)
+            containers = [
+                veracrypt_create_container(Path(source), password, keep_source=keep_source)
+                for source in unique_paths(args.sources)
+            ]
         except DewError as exc:
             print(f"dew encryption failed: {exc}", file=sys.stderr)
             return 1
-        print(f"VeraCrypt container: {container}")
+        for container in containers:
+            print(f"VeraCrypt container: {container}")
         return 0
 
     if argv and argv[0] == "veracrypt-decrypt":
         parser = argparse.ArgumentParser(prog="dew-encryption veracrypt-decrypt", description="Extract files from a VeraCrypt container.")
-        parser.add_argument("container", help="VeraCrypt container path.")
+        parser.add_argument("containers", nargs="+", help="VeraCrypt container paths.")
         parser.add_argument("--password", help="VeraCrypt container password. If omitted, a hidden prompt is shown.")
         parser.add_argument("--output", help="Output file or folder path. Defaults beside the container.")
         parser.add_argument("--remove-container", action="store_true", help="Delete the container after successful extraction.")
@@ -615,16 +632,22 @@ def main(argv: list[str] | None = None) -> int:
             password = args.password or getpass.getpass("VeraCrypt password: ")
             if not password:
                 raise DewError("A VeraCrypt password is required.")
-            output = veracrypt_decrypt_container(
-                Path(args.container),
-                password,
-                output=Path(args.output) if args.output else None,
-                keep_container=True if args.keep_container else (False if args.remove_container else None),
-            )
+            if args.output and len(args.containers) > 1:
+                raise DewError("--output can only be used with one container.")
+            outputs = [
+                veracrypt_decrypt_container(
+                    Path(container),
+                    password,
+                    output=Path(args.output) if args.output else None,
+                    keep_container=True if args.keep_container else (False if args.remove_container else None),
+                )
+                for container in unique_paths(args.containers)
+            ]
         except DewError as exc:
             print(f"dew encryption failed: {exc}", file=sys.stderr)
             return 1
-        print(f"Decrypted to: {output}")
+        for output in outputs:
+            print(f"Decrypted to: {output}")
         return 0
 
     if argv and argv[0] == "watch":

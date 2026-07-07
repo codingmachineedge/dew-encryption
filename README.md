@@ -160,8 +160,8 @@ These entries are installed without administrator rights and do not require hold
 
 Files and folders also get VeraCrypt container actions:
 
-- `dew encryption VeraCrypt encrypt` creates a `.dew.hc` VeraCrypt container, copies the selected file or folder into it, dismounts the container, and removes the original by default.
-- `.hc` files get `dew encryption VeraCrypt decrypt`, which mounts the container and restores the contents beside it.
+- `dew encryption VeraCrypt encrypt` creates a `.dew.hc` VeraCrypt container, copies each selected file or folder into its own container, dismounts the container, and removes the original by default.
+- `.hc` files get `dew encryption VeraCrypt decrypt`, which can decrypt one or more selected containers and restores their contents beside them.
 
 These actions prompt for the VeraCrypt password in a console window. The automated PowerShell installer tries to install VeraCrypt with `winget`; the full Windows installer also includes an optional VeraCrypt dependency task.
 
@@ -216,8 +216,8 @@ To restore a file or folder to a specific commit:
 
 ```powershell
 dew-encryption restore "C:\Path\To\Folder\Dew Encryption Archives\.dew-encryption-repo" abc1234 C:\Path\To\Folder
-dew-encryption veracrypt-encrypt C:\Path\To\File.txt
-dew-encryption veracrypt-decrypt C:\Path\To\File.txt.dew.hc
+dew-encryption veracrypt-encrypt C:\Path\To\File.txt C:\Path\To\Folder
+dew-encryption veracrypt-decrypt C:\Path\To\File.txt.dew.hc C:\Path\To\Folder.dew.hc
 dew-encryption veracrypt-settings --show
 ```
 

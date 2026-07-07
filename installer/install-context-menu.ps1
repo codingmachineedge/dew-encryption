@@ -12,9 +12,9 @@ $WatchCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Se
 $WatchBackgroundCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; Start-Process -WindowStyle Hidden -FilePath '$EscapedPython' -ArgumentList @('-m','dew_encryption','watch','%V') }`""
 $ManagerCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption.gui '%1' --history }`""
 $ManagerBackgroundCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption.gui '%V' --history }`""
-$VeraCryptEncryptCommand = "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption veracrypt-encrypt '%1'; Read-Host 'Press Enter to close' }`""
-$VeraCryptFolderEncryptCommand = "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption veracrypt-encrypt '%1'; Read-Host 'Press Enter to close' }`""
-$VeraCryptDecryptCommand = "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption veracrypt-decrypt '%1'; Read-Host 'Press Enter to close' }`""
+$VeraCryptEncryptCommand = "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption veracrypt-encrypt '%1' %*; Read-Host 'Press Enter to close' }`""
+$VeraCryptFolderEncryptCommand = "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption veracrypt-encrypt '%1' %*; Read-Host 'Press Enter to close' }`""
+$VeraCryptDecryptCommand = "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption veracrypt-decrypt '%1' %*; Read-Host 'Press Enter to close' }`""
 $CreateTasksCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File `"$EscapedRoot\installer\create-elevated-tasks.ps1`" -Python `"$EscapedPython`"' }`""
 $RemoveTasksCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File `"$EscapedRoot\installer\remove-elevated-tasks.ps1`"' }`""
 
@@ -36,6 +36,9 @@ $keys = @(
 foreach ($item in $keys) {
     New-Item -Path $item.Path -Force | Out-Null
     New-ItemProperty -Path $item.Path -Name "MUIVerb" -Value $item.Verb -PropertyType String -Force | Out-Null
+    if ($item.Path -like "*veracrypt*") {
+        New-ItemProperty -Path $item.Path -Name "MultiSelectModel" -Value "Player" -PropertyType String -Force | Out-Null
+    }
     $icon = "imageres.dll,-102"
     if ($item.Path -like "*dew-encryption-watch") {
         $icon = Join-Path $ProjectRoot "assets\icons\dew-watch.ico"
