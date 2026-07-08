@@ -6,7 +6,7 @@
         Height="760"
         MinWidth="940"
         MinHeight="600">
-  <Grid RowDefinitions="Auto,*" Margin="16" RowSpacing="12">
+  <Grid RowDefinitions="Auto,*" Margin="16">
     <Border Grid.Row="0" CornerRadius="14" Padding="18" Background="#102033">
       <DockPanel>
         <StackPanel DockPanel.Dock="Left">
@@ -19,7 +19,7 @@
 
     <TabControl Grid.Row="1">
       <TabItem Header="Files">
-        <Grid RowDefinitions="Auto,*,Auto" RowSpacing="10" Margin="0,10,0,0">
+        <Grid RowDefinitions="Auto,*,Auto" Margin="0,10,0,0">
           <StackPanel Orientation="Horizontal" Spacing="8">
             <Button Content="Add files" Click="AddFiles_Click" />
             <Button Content="Add folder" Click="AddFolder_Click" />
@@ -37,7 +37,7 @@
       </TabItem>
 
       <TabItem Header="History">
-        <Grid RowDefinitions="Auto,*" RowSpacing="10" Margin="0,10,0,0">
+        <Grid RowDefinitions="Auto,*" Margin="0,10,0,0">
           <StackPanel Orientation="Horizontal" Spacing="8">
             <Button Content="Refresh history" Click="RefreshHistory_Click" />
             <Button Content="Snapshot now" Click="SnapshotHistory_Click" />
@@ -48,10 +48,10 @@
       </TabItem>
 
       <TabItem Header="Containers">
-        <Grid ColumnDefinitions="320,*" RowDefinitions="Auto,*" ColumnSpacing="12" RowSpacing="10" Margin="0,10,0,0">
+        <Grid ColumnDefinitions="320,*" RowDefinitions="Auto,*" Margin="0,10,0,0">
           <TextBlock Grid.ColumnSpan="2" Text="Manage encrypted containers, custom themes, open/close scripts, Discord webhooks, Home Assistant webhooks, and Git-backed container file history." TextWrapping="Wrap" />
           <ListBox x:Name="ContainersList" Grid.Row="1" />
-          <Grid Grid.Row="1" Grid.Column="1" RowDefinitions="Auto,Auto,Auto,*" RowSpacing="10">
+          <Grid Grid.Row="1" Grid.Column="1" RowDefinitions="Auto,Auto,Auto,*">
             <UniformGrid Columns="2" Rows="4">
               <TextBox Watermark="Container name" x:Name="ContainerNameBox" />
               <TextBox Watermark="Container path" x:Name="ContainerPathBox" />

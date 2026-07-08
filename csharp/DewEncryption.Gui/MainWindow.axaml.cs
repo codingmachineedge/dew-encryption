@@ -1,13 +1,15 @@
 using System.Collections.ObjectModel;
-using System.Diagnostics;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using DewEncryption.Core;
 
 namespace DewEncryption.Gui;
 
 public sealed partial class MainWindow : Window
 {
+    private readonly DewCliService cliService = new();
+    private readonly DewSelectionService selectionService = new();
     private readonly ObservableCollection<DewPathItem> selectedPaths = [];
     private readonly ObservableCollection<string> containers = [];
 
@@ -50,6 +52,7 @@ public sealed partial class MainWindow : Window
     private void RemoveSelected_Click(object? sender, RoutedEventArgs e)
     {
         List<DewPathItem> items = FilesGrid.SelectedItems.Cast<DewPathItem>().ToList();
+        selectionService.RemovePaths(items);
         foreach (DewPathItem item in items)
         {
             selectedPaths.Remove(item);
@@ -64,12 +67,12 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        await RunCliAsync(selectedPaths.Select(item => item.Path).ToArray());
+        await RunAndLogAsync(cliService.RunSelectedAsync(selectedPaths.Select(item => item.Path)));
     }
 
     private async void OpenHelp_Click(object? sender, RoutedEventArgs e)
     {
-        await RunCliAsync("--help");
+        await RunAndLogAsync(cliService.RunHelpAsync());
     }
 
     private async void RefreshHistory_Click(object? sender, RoutedEventArgs e)
@@ -81,7 +84,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        await RunCliAsync("history", first.Path);
+        await RunAndLogAsync(cliService.RefreshHistoryAsync(first.Path));
     }
 
     private async void SnapshotHistory_Click(object? sender, RoutedEventArgs e)
@@ -93,7 +96,7 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        await RunCliAsync(first.Path);
+        await RunAndLogAsync(cliService.SnapshotHistoryAsync(first.Path));
     }
 
     private async void OpenPythonHistoryGui_Click(object? sender, RoutedEventArgs e)
@@ -105,34 +108,26 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        await RunProcessAsync("dew-encryption-gui", first.Path, "--history");
+        await RunAndLogAsync(cliService.OpenHistoryGuiAsync(first.Path));
     }
 
     private void RegisterContainer_Click(object? sender, RoutedEventArgs e)
     {
-        string name = string.IsNullOrWhiteSpace(ContainerNameBox.Text) ? "Container" : ContainerNameBox.Text.Trim();
-        string path = ContainerPathBox.Text?.Trim() ?? string.Empty;
-        string mountPath = MountPathBox.Text?.Trim() ?? string.Empty;
-        string label = string.IsNullOrWhiteSpace(path) ? name : $"{name} — {path}";
-        if (!string.IsNullOrWhiteSpace(mountPath))
-        {
-            label = $"{label} mounted at {mountPath}";
-        }
-
-        containers.Add(label);
-        Log($"Registered container draft: {label}");
+        DewContainerProfile profile = ReadContainerProfile();
+        containers.Add(profile.DisplayLabel);
+        Log($"Registered container draft: {profile.DisplayLabel}");
     }
 
     private async void SnapshotContainer_Click(object? sender, RoutedEventArgs e)
     {
-        string path = ContainerPathBox.Text?.Trim() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(path))
+        DewContainerProfile profile = ReadContainerProfile();
+        if (string.IsNullOrWhiteSpace(profile.Path))
         {
             Log("Enter a container path before snapshotting container history.");
             return;
         }
 
-        await RunCliAsync("container-history", path, "--snapshot");
+        await RunAndLogAsync(cliService.SnapshotContainerHistoryAsync(profile.Path));
     }
 
     private async void TestOpenHooks_Click(object? sender, RoutedEventArgs e)
@@ -147,72 +142,65 @@ public sealed partial class MainWindow : Window
 
     private async Task TestHooksAsync(string eventName)
     {
-        string path = ContainerPathBox.Text?.Trim() ?? string.Empty;
-        if (string.IsNullOrWhiteSpace(path))
+        DewContainerProfile profile = ReadContainerProfile();
+        if (string.IsNullOrWhiteSpace(profile.Path))
         {
             Log($"Enter a container path before testing {eventName} hooks.");
             return;
         }
 
-        List<string> args = ["container-hooks", eventName, path];
-        string mountPath = MountPathBox.Text?.Trim() ?? string.Empty;
-        if (!string.IsNullOrWhiteSpace(mountPath))
-        {
-            args.Add("--mount-path");
-            args.Add(mountPath);
-        }
+        await RunAndLogAsync(cliService.TestContainerHooksAsync(eventName, profile.Path, profile.MountPath));
+    }
 
-        await RunCliAsync(args.ToArray());
+    private DewContainerProfile ReadContainerProfile()
+    {
+        string name = string.IsNullOrWhiteSpace(ContainerNameBox.Text) ? "Container" : ContainerNameBox.Text.Trim();
+        string path = ContainerPathBox.Text?.Trim() ?? string.Empty;
+        string mountPath = MountPathBox.Text?.Trim() ?? string.Empty;
+        int fontSize = int.TryParse(FontSizeBox.Text, out int parsedFontSize) ? parsedFontSize : 10;
+        DewThemeSettings theme = new(
+            FontFamilyBox.Text?.Trim() ?? "Segoe UI",
+            BackgroundBox.Text?.Trim() ?? "#0f172a",
+            ForegroundBox.Text?.Trim() ?? "#e5e7eb",
+            AccentBox.Text?.Trim() ?? "#38bdf8",
+            fontSize);
+        return new DewContainerProfile(name, path, mountPath, theme, HookBox.Text?.Trim() ?? string.Empty);
     }
 
     private void AddPath(string path, string kind)
     {
-        if (selectedPaths.Any(item => string.Equals(item.Path, path, StringComparison.OrdinalIgnoreCase)))
+        if (!selectionService.AddPath(path, kind))
         {
             return;
         }
 
-        selectedPaths.Add(new DewPathItem(path, kind));
+        DewPathItem item = selectionService.SelectedPaths[^1];
+        selectedPaths.Add(item);
         Log($"Added {kind.ToLowerInvariant()}: {path}");
     }
 
-    private Task RunCliAsync(params string[] arguments)
+    private async Task RunAndLogAsync(Task<DewCommandResult> commandTask)
     {
-        return RunProcessAsync("dew-encryption", arguments);
-    }
-
-    private async Task RunProcessAsync(string fileName, params string[] arguments)
-    {
-        Log($"> {fileName} {string.Join(' ', arguments.Select(QuoteForLog))}");
-        ProcessStartInfo startInfo = new()
+        try
         {
-            FileName = fileName,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
+            DewCommandResult result = await commandTask;
+            Log($"> {result.FileName} {string.Join(' ', result.Arguments.Select(QuoteForLog))}");
+            if (!string.IsNullOrWhiteSpace(result.StandardOutput))
+            {
+                Log(result.StandardOutput.TrimEnd());
+            }
 
-        foreach (string argument in arguments)
-        {
-            startInfo.ArgumentList.Add(argument);
+            if (!string.IsNullOrWhiteSpace(result.StandardError))
+            {
+                Log(result.StandardError.TrimEnd());
+            }
+
+            Log($"Exit code: {result.ExitCode}");
         }
-
-        using Process process = Process.Start(startInfo) ?? throw new InvalidOperationException($"Unable to start {fileName}.");
-        string output = await process.StandardOutput.ReadToEndAsync();
-        string error = await process.StandardError.ReadToEndAsync();
-        await process.WaitForExitAsync();
-
-        if (!string.IsNullOrWhiteSpace(output))
+        catch (Exception ex)
         {
-            Log(output.TrimEnd());
+            Log(ex.Message);
         }
-
-        if (!string.IsNullOrWhiteSpace(error))
-        {
-            Log(error.TrimEnd());
-        }
-
-        Log($"Exit code: {process.ExitCode}");
     }
 
     private static string QuoteForLog(string value)
@@ -226,5 +214,3 @@ public sealed partial class MainWindow : Window
         LogBox.CaretIndex = LogBox.Text.Length;
     }
 }
-
-public sealed record DewPathItem(string Path, string Kind);
