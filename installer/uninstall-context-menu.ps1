@@ -22,10 +22,17 @@ $keys = @(
     "HKCU:\Software\Classes\Directory\shell\dew-encryption-git-commit-push"
 )
 
-foreach ($key in $keys) {
-    if (Test-Path $key) {
-        Remove-Item -Path $key -Recurse -Force
+function Get-HkcuSubKeyPath {
+    param([string]$Path)
+    $prefix = "HKCU:\"
+    if (-not $Path.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Only HKCU registry paths are supported: $Path"
     }
+    return $Path.Substring($prefix.Length)
+}
+
+foreach ($key in $keys) {
+    [Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree((Get-HkcuSubKeyPath $key), $false)
 }
 
 Write-Host "Removed Explorer right-click menu entry: dew encryption"

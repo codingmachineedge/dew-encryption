@@ -26,6 +26,32 @@ $DockerSaveHereCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command
 $GitCommitPushCommand = "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption git-commit-push '%V'; Read-Host 'Press Enter to close' }`""
 $GitCommitPushFolderCommand = "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption git-commit-push '%1'; Read-Host 'Press Enter to close' }`""
 
+function Get-HkcuSubKeyPath {
+    param([string]$Path)
+    $prefix = "HKCU:\"
+    if (-not $Path.StartsWith($prefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Only HKCU registry paths are supported: $Path"
+    }
+    return $Path.Substring($prefix.Length)
+}
+
+function Set-HkcuStringValue {
+    param(
+        [string]$Path,
+        [string]$Name,
+        [string]$Value
+    )
+    $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey((Get-HkcuSubKeyPath $Path))
+    if (-not $key) {
+        throw "Unable to create registry key: $Path"
+    }
+    try {
+        $key.SetValue($Name, $Value, [Microsoft.Win32.RegistryValueKind]::String)
+    } finally {
+        $key.Dispose()
+    }
+}
+
 $keys = @(
     @{ Path = "HKCU:\Software\Classes\*\shell\dew-encryption"; Verb = "dew encryption"; Command = $Command },
     @{ Path = "HKCU:\Software\Classes\Directory\shell\dew-encryption"; Verb = "dew encryption"; Command = $Command },
@@ -51,10 +77,9 @@ $keys = @(
 )
 
 foreach ($item in $keys) {
-    New-Item -Path $item.Path -Force | Out-Null
-    New-ItemProperty -Path $item.Path -Name "MUIVerb" -Value $item.Verb -PropertyType String -Force | Out-Null
+    Set-HkcuStringValue -Path $item.Path -Name "MUIVerb" -Value $item.Verb
     if ($item.Path -like "*veracrypt*" -or $item.Path -like "*quick-create*") {
-        New-ItemProperty -Path $item.Path -Name "MultiSelectModel" -Value "Player" -PropertyType String -Force | Out-Null
+        Set-HkcuStringValue -Path $item.Path -Name "MultiSelectModel" -Value "Player"
     }
     $icon = "imageres.dll,-102"
     if ($item.Path -like "*dew-encryption-watch") {
@@ -72,17 +97,16 @@ foreach ($item in $keys) {
     } elseif ($item.Path -like "*dew-encryption") {
         $icon = Join-Path $ProjectRoot "assets\icons\dew-archive.ico"
     }
-    New-ItemProperty -Path $item.Path -Name "Icon" -Value $icon -PropertyType String -Force | Out-Null
+    Set-HkcuStringValue -Path $item.Path -Name "Icon" -Value $icon
     if ($item.RepoOnly) {
         # Registry shell verbs cannot reliably evaluate parent .git folders, so the
         # command also auto-detects the containing repository and exits if absent.
-        New-ItemProperty -Path $item.Path -Name "AppliesTo" -Value 'System.FileName:".git" OR System.FileName:"*"' -PropertyType String -Force | Out-Null
+        Set-HkcuStringValue -Path $item.Path -Name "AppliesTo" -Value 'System.FileName:".git" OR System.FileName:"*"'
     } else {
-        New-ItemProperty -Path $item.Path -Name "AppliesTo" -Value "" -PropertyType String -Force | Out-Null
+        Set-HkcuStringValue -Path $item.Path -Name "AppliesTo" -Value ""
     }
     $commandKey = Join-Path $item.Path "command"
-    New-Item -Path $commandKey -Force | Out-Null
-    Set-Item -Path $commandKey -Value $item.Command
+    Set-HkcuStringValue -Path $commandKey -Name "" -Value $item.Command
 }
 
 Write-Host "Installed Explorer right-click menu entry: dew encryption"
