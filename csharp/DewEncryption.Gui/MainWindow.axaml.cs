@@ -281,7 +281,7 @@ public sealed partial class MainWindow : Window
             }
         }
 
-        await RunCliAsync(args.ToArray());
+        await RunAndLogAsync(cliService.RunCliAsync(args));
     }
 
     private string SelectedDriveMode()
