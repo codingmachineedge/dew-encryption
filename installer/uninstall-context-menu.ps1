@@ -12,7 +12,10 @@ $keys = @(
     "HKCU:\Software\Classes\Directory\shell\dew-encryption-veracrypt-encrypt",
     "HKCU:\Software\Classes\.hc\shell\dew-encryption-veracrypt-decrypt",
     "HKCU:\Software\Classes\Directory\Background\shell\dew-encryption-create-elevated-tasks",
-    "HKCU:\Software\Classes\Directory\Background\shell\dew-encryption-remove-elevated-tasks"
+    "HKCU:\Software\Classes\Directory\Background\shell\dew-encryption-remove-elevated-tasks",
+    "HKCU:\Software\Classes\*\shell\dew-encryption-dew-drive-add",
+    "HKCU:\Software\Classes\Directory\shell\dew-encryption-dew-drive-add",
+    "HKCU:\Software\Classes\Directory\Background\shell\dew-encryption-dew-drive-sync"
 )
 
 foreach ($key in $keys) {
