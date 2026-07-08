@@ -41,6 +41,29 @@ powershell -ExecutionPolicy Bypass -File .\installer\install-context-menu.ps1
 
 The installer writes only to `HKCU`, so it does not require administrator rights. The menu entry is registered for files, folders, and folder background right-clicks, and it does not require holding Shift.
 
+### Windows 11 Modern Context Menu
+
+Windows 11 shows simple registry verbs under `Show more options`. To place Dew Encryption in the new first-level Windows 11 context menu, build and register the native `IExplorerCommand` sparse-package integration:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\installer\install-win11-context-menu.ps1
+```
+
+Prerequisites for this modern menu path:
+
+- Visual Studio 2022 Build Tools with Desktop development with C++
+- A Windows 11 SDK
+- CMake
+- .NET SDK, for the C# GUI package entry point
+
+The Windows 11 installer builds `windows\context-menu\DewEncryptionExplorerCommand.dll`, generates a sparse package manifest, registers it with `Add-AppxPackage -ExternalLocation`, and restarts Explorer. The classic registry installer remains useful as a fallback and for commands that should also appear under `Show more options`.
+
+Remove the Windows 11 modern integration:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\installer\uninstall-win11-context-menu.ps1
+```
+
 Full Windows `.exe` installer:
 
 ```powershell
