@@ -729,6 +729,146 @@ def veracrypt_decrypt_container(
 
 
 
+def find_docker() -> Path:
+    try:
+        return find_executable("docker")
+    except DewError as exc:
+        raise DewError("Docker was not found. Install Docker and make sure the docker CLI is available.") from exc
+
+
+def docker_run(cmd: list[str]) -> str:
+    docker = find_docker()
+    try:
+        return run([str(docker), *cmd])
+    except DewError as exc:
+        raise DewError(f"Docker {' '.join(cmd[:2]) if len(cmd) > 1 else cmd[0]} failed: {exc}") from exc
+
+
+def dew_drive_registry_ref(name_or_ref: str) -> str:
+    # `restore NAME` is a friendly alias for the same registry reference used by
+    # `pull`; callers may pass a fully qualified reference or a short local tag.
+    return name_or_ref
+
+
+def read_secure_password(label: str, password_file: str | None = None, password_env: str | None = None) -> str:
+    if password_file:
+        try:
+            password = Path(password_file).expanduser().read_text(encoding="utf-8").splitlines()[0]
+        except (OSError, IndexError) as exc:
+            raise DewError(f"Unable to read password file: {password_file}") from exc
+    elif password_env:
+        password = os.environ.get(password_env, "")
+        if not password:
+            raise DewError(f"Password environment variable is empty or missing: {password_env}")
+    else:
+        password = getpass.getpass(label)
+    if not password:
+        raise DewError("An encryption password is required.")
+    return password
+
+
+def metadata_payload_path(dew_drive_dir: Path, metadata: dict) -> Path:
+    candidates = [
+        metadata.get("payload"),
+        metadata.get("payload_path"),
+        metadata.get("encrypted_payload"),
+        metadata.get("container"),
+        metadata.get("container_path"),
+    ]
+    for value in candidates:
+        if isinstance(value, str) and value.strip():
+            path = dew_drive_dir / value
+            if path.exists():
+                return path
+            raise DewError(f"Encrypted payload referenced by metadata is missing: {value}")
+    payloads = [p for p in dew_drive_dir.iterdir() if p.is_file() and p.name != "metadata.json"]
+    if len(payloads) == 1:
+        return payloads[0]
+    raise DewError("Encrypted payload metadata is missing or ambiguous.")
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def validate_restored_files(output: Path, metadata: dict) -> list[str]:
+    files = metadata.get("files")
+    if not isinstance(files, list):
+        return ["metadata does not include a files list; skipped per-file validation"]
+    warnings: list[str] = []
+    base = output if output.is_dir() else output.parent
+    for entry in files:
+        if not isinstance(entry, dict):
+            continue
+        rel = entry.get("path") or entry.get("name")
+        if not isinstance(rel, str) or Path(rel).is_absolute() or ".." in Path(rel).parts:
+            continue
+        target = base / rel
+        if not target.exists():
+            raise DewError(f"Restored file is missing: {rel}")
+        if "size" in entry and target.is_file() and target.stat().st_size != int(entry["size"]):
+            raise DewError(f"Restored file size mismatch: {rel}")
+        expected_hash = entry.get("sha256")
+        if isinstance(expected_hash, str) and target.is_file() and sha256_file(target).lower() != expected_hash.lower():
+            raise DewError(f"Restored file hash mismatch: {rel}")
+    return warnings
+
+
+def restore_dew_drive_from_registry(
+    registry_ref: str,
+    output: Path,
+    password: str,
+    force: bool = False,
+) -> tuple[Path, list[str]]:
+    output = output.expanduser().resolve()
+    output_exists = output.exists()
+    if output_exists and not force:
+        raise DewError(f"Output path already exists: {output}. Use --force to replace it.")
+    docker_run(["pull", registry_ref])
+    container_id = ""
+    try:
+        container_id = docker_run(["create", registry_ref]).strip()
+        if not container_id:
+            raise DewError("Docker did not return a temporary container id.")
+        with tempfile.TemporaryDirectory(prefix="dew-drive-") as temp_dir:
+            temp = Path(temp_dir)
+            copied = temp / "dew-drive"
+            docker_run(["cp", f"{container_id}:/dew-drive", str(copied)])
+            metadata_path = copied / "metadata.json"
+            if not metadata_path.exists():
+                raise DewError("Payload metadata is missing: /dew-drive/metadata.json")
+            try:
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError as exc:
+                raise DewError("Payload metadata is not valid JSON.") from exc
+            if not isinstance(metadata, dict):
+                raise DewError("Payload metadata must be a JSON object.")
+            payload = metadata_payload_path(copied, metadata)
+            restore_target = temp / "restored-output"
+            try:
+                restored = veracrypt_decrypt_container(payload, password, output=restore_target, keep_container=True)
+            except DewError as exc:
+                raise DewError(f"Decryption failed: {exc}") from exc
+            warnings = validate_restored_files(restored, metadata)
+            output.parent.mkdir(parents=True, exist_ok=True)
+            if output_exists:
+                if output.is_dir():
+                    shutil.rmtree(output)
+                else:
+                    output.unlink()
+            shutil.move(str(restored), str(output))
+            return output, warnings
+    finally:
+        if container_id:
+            try:
+                docker_run(["rm", container_id])
+            except DewError:
+                pass
+
 
 def container_history_repo(container: Path) -> Path:
     container = container.resolve()
@@ -1131,6 +1271,48 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Decrypted to: {output}")
         return 0
 
+
+
+
+    if argv and argv[0] == "dew-drive":
+        parser = argparse.ArgumentParser(prog="dew-encryption dew-drive", description="Restore registry-backed Dew Drives.")
+        subparsers = parser.add_subparsers(dest="command", required=True)
+
+        pull_parser = subparsers.add_parser("pull", help="Pull a Dew Drive image from a registry and restore it.")
+        pull_parser.add_argument("registry_ref", help="Container registry image reference to pull.")
+        pull_parser.add_argument("--output", required=True, help="Output file or folder path for restored contents.")
+        pull_parser.add_argument("--force", action="store_true", help="Replace the output path if it already exists.")
+        pull_parser.add_argument("--password-file", help="Read the encryption password from the first line of a file.")
+        pull_parser.add_argument("--password-env", help="Read the encryption password from this environment variable.")
+
+        restore_parser = subparsers.add_parser("restore", help="Restore a named Dew Drive from its registry-backed image.")
+        restore_parser.add_argument("name", help="Dew Drive name or registry image reference.")
+        restore_parser.add_argument("--output", required=True, help="Output file or folder path for restored contents.")
+        restore_parser.add_argument("--force", action="store_true", help="Replace the output path if it already exists.")
+        restore_parser.add_argument("--password-file", help="Read the encryption password from the first line of a file.")
+        restore_parser.add_argument("--password-env", help="Read the encryption password from this environment variable.")
+
+        args = parser.parse_args(argv[1:])
+        try:
+            registry_ref = args.registry_ref if args.command == "pull" else dew_drive_registry_ref(args.name)
+            password = read_secure_password(
+                "Dew Drive encryption password: ",
+                password_file=args.password_file,
+                password_env=args.password_env,
+            )
+            output, warnings = restore_dew_drive_from_registry(
+                registry_ref,
+                Path(args.output),
+                password,
+                force=args.force,
+            )
+        except DewError as exc:
+            print(f"dew encryption failed: {exc}", file=sys.stderr)
+            return 1
+        print(f"Dew Drive restored to: {output}")
+        for warning in warnings:
+            print(f"warning: {warning}", file=sys.stderr)
+        return 0
 
 
     if argv and argv[0] == "container-history":
