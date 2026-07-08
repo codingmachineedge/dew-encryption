@@ -9,18 +9,24 @@ namespace DewEncryption.Gui;
 public sealed partial class MainWindow : Window
 {
     private readonly DewCliService cliService = new();
+    private readonly DewDriveService driveService = new();
     private readonly DewSelectionService selectionService = new();
+    private readonly SettingsService settingsService = new();
     private readonly ObservableCollection<DewPathItem> selectedPaths = [];
     private readonly ObservableCollection<string> containers = [];
     private readonly ObservableCollection<string> driveProfiles = [];
+    private AppSettings settings;
 
     public MainWindow()
     {
         InitializeComponent();
+        settings = settingsService.Load();
         FilesGrid.ItemsSource = selectedPaths;
         ContainersList.ItemsSource = containers;
         DriveProfilesList.ItemsSource = driveProfiles;
-        Log("Ready. Select files, folders, or containers to drive the dew-encryption CLI.");
+        RefreshContainerList();
+        UpdateSelectionContext();
+        Log("Ready.");
     }
 
     private async void AddFiles_Click(object? sender, RoutedEventArgs e)
@@ -59,12 +65,16 @@ public sealed partial class MainWindow : Window
         {
             selectedPaths.Remove(item);
         }
+
+        UpdateSelectionContext();
+        Log($"Removed {items.Count} selected item(s).");
     }
 
     private async void RunSelected_Click(object? sender, RoutedEventArgs e)
     {
         if (selectedPaths.Count == 0)
         {
+            SetStatus("Nothing selected.");
             Log("Add at least one file or folder before running Dew Encryption.");
             return;
         }
@@ -82,6 +92,7 @@ public sealed partial class MainWindow : Window
         DewPathItem? first = selectedPaths.FirstOrDefault();
         if (first is null)
         {
+            SetStatus("Nothing selected.");
             Log("Select a file or folder before refreshing history.");
             return;
         }
@@ -94,6 +105,7 @@ public sealed partial class MainWindow : Window
         DewPathItem? first = selectedPaths.FirstOrDefault();
         if (first is null)
         {
+            SetStatus("Nothing selected.");
             Log("Select a file or folder before snapshotting history.");
             return;
         }
@@ -106,6 +118,7 @@ public sealed partial class MainWindow : Window
         DewPathItem? first = selectedPaths.FirstOrDefault();
         if (first is null)
         {
+            SetStatus("Nothing selected.");
             Log("Select a file or folder before opening the history manager.");
             return;
         }
@@ -116,8 +129,35 @@ public sealed partial class MainWindow : Window
     private void RegisterContainer_Click(object? sender, RoutedEventArgs e)
     {
         DewContainerProfile profile = ReadContainerProfile();
-        containers.Add(profile.DisplayLabel);
-        Log($"Registered container draft: {profile.DisplayLabel}");
+        if (string.IsNullOrWhiteSpace(profile.Path))
+        {
+            SetStatus("Container path required.");
+            Log("Enter a container path before saving a container profile.");
+            return;
+        }
+
+        List<ContainerProfile> profiles = (settings.Containers ?? []).ToList();
+        int existingIndex = profiles.FindIndex(item =>
+            string.Equals(item.Path, profile.Path, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(item.Name, profile.Name, StringComparison.OrdinalIgnoreCase));
+
+        IReadOnlyList<HookAction>? existingHooks = existingIndex >= 0 ? profiles[existingIndex].Hooks : [];
+        ContainerProfile savedProfile = new(profile.Name, profile.Path, profile.MountPath, profile.Theme, existingHooks);
+        if (existingIndex >= 0)
+        {
+            profiles[existingIndex] = savedProfile;
+        }
+        else
+        {
+            profiles.Add(savedProfile);
+        }
+
+        settings = settings with { Containers = profiles };
+        settingsService.Save(settings);
+        RefreshContainerList();
+        ContainerStatusText.Text = $"Saved: {profile.DisplayLabel}";
+        SetStatus("Container saved.");
+        Log($"Saved container profile: {profile.DisplayLabel}");
     }
 
     private async void SnapshotContainer_Click(object? sender, RoutedEventArgs e)
@@ -125,11 +165,25 @@ public sealed partial class MainWindow : Window
         DewContainerProfile profile = ReadContainerProfile();
         if (string.IsNullOrWhiteSpace(profile.Path))
         {
+            SetStatus("Container path required.");
             Log("Enter a container path before snapshotting container history.");
             return;
         }
 
         await RunAndLogAsync(cliService.SnapshotContainerHistoryAsync(profile.Path));
+    }
+
+    private async void ViewContainerHistory_Click(object? sender, RoutedEventArgs e)
+    {
+        DewContainerProfile profile = ReadContainerProfile();
+        if (string.IsNullOrWhiteSpace(profile.Path))
+        {
+            SetStatus("Container path required.");
+            Log("Enter a container path before viewing container history.");
+            return;
+        }
+
+        await RunAndLogAsync(cliService.ViewContainerHistoryAsync(profile.Path));
     }
 
     private async void TestOpenHooks_Click(object? sender, RoutedEventArgs e)
@@ -147,11 +201,33 @@ public sealed partial class MainWindow : Window
         DewContainerProfile profile = ReadContainerProfile();
         if (string.IsNullOrWhiteSpace(profile.Path))
         {
+            SetStatus("Container path required.");
             Log($"Enter a container path before testing {eventName} hooks.");
             return;
         }
 
         await RunAndLogAsync(cliService.TestContainerHooksAsync(eventName, profile.Path, profile.MountPath));
+    }
+
+    private void ContainersList_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        int index = ContainersList.SelectedIndex;
+        ContainerProfile? profile = index >= 0 ? (settings.Containers ?? []).ElementAtOrDefault(index) : null;
+        if (profile is null)
+        {
+            return;
+        }
+
+        DewThemeSettings theme = profile.Theme ?? new DewThemeSettings();
+        ContainerNameBox.Text = profile.Name;
+        ContainerPathBox.Text = profile.Path;
+        MountPathBox.Text = profile.MountPath;
+        FontFamilyBox.Text = theme.FontFamily;
+        BackgroundBox.Text = theme.Background;
+        ForegroundBox.Text = theme.Foreground;
+        AccentBox.Text = theme.Accent;
+        FontSizeBox.Text = theme.FontSize.ToString();
+        ContainerStatusText.Text = profile.Path;
     }
 
     private DewContainerProfile ReadContainerProfile()
@@ -162,27 +238,31 @@ public sealed partial class MainWindow : Window
         int fontSize = int.TryParse(FontSizeBox.Text, out int parsedFontSize) ? parsedFontSize : 10;
         DewThemeSettings theme = new(
             FontFamilyBox.Text?.Trim() ?? "Segoe UI",
-            BackgroundBox.Text?.Trim() ?? "#0f172a",
-            ForegroundBox.Text?.Trim() ?? "#e5e7eb",
-            AccentBox.Text?.Trim() ?? "#38bdf8",
+            BackgroundBox.Text?.Trim() ?? "#172033",
+            ForegroundBox.Text?.Trim() ?? "#F8FAFC",
+            AccentBox.Text?.Trim() ?? "#0F766E",
             fontSize);
         return new DewContainerProfile(name, path, mountPath, theme, HookBox.Text?.Trim() ?? string.Empty);
     }
-
 
     private void NewDrive_Click(object? sender, RoutedEventArgs e)
     {
         string name = string.IsNullOrWhiteSpace(DriveNameBox.Text) ? "Dew Drive" : DriveNameBox.Text.Trim();
         string folder = DriveFolderBox.Text?.Trim() ?? string.Empty;
         string registry = DriveRegistryImageBox.Text?.Trim() ?? string.Empty;
-        string label = string.IsNullOrWhiteSpace(folder) ? name : $"{name} — {folder}";
+        string label = string.IsNullOrWhiteSpace(folder) ? name : $"{name} - {folder}";
         if (!string.IsNullOrWhiteSpace(registry))
         {
-            label = $"{label} ⇄ {registry}";
+            label = $"{label} -> {registry}";
         }
 
-        driveProfiles.Add(label);
-        Log($"Registered Dew Drive draft: {label}");
+        if (!driveProfiles.Contains(label))
+        {
+            driveProfiles.Add(label);
+        }
+
+        DriveStatusText.Text = label;
+        Log($"Prepared Dew Drive: {label}");
     }
 
     private async void PickDriveFolder_Click(object? sender, RoutedEventArgs e)
@@ -205,7 +285,7 @@ public sealed partial class MainWindow : Window
     {
         IReadOnlyList<IStorageFile> files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
         {
-            Title = "Add files to Dew Drive",
+            Title = "Copy files into Dew Drive",
             AllowMultiple = true,
         });
 
@@ -216,7 +296,7 @@ public sealed partial class MainWindow : Window
     {
         IReadOnlyList<IStorageFolder> folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
         {
-            Title = "Add folder to Dew Drive",
+            Title = "Copy folder into Dew Drive",
             AllowMultiple = false,
         });
 
@@ -245,10 +325,41 @@ public sealed partial class MainWindow : Window
 
     private void AppendDriveItems(IEnumerable<string> paths)
     {
-        foreach (string path in paths.Where(path => !string.IsNullOrWhiteSpace(path)))
+        List<string> pathList = paths.Where(path => !string.IsNullOrWhiteSpace(path)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        if (pathList.Count == 0)
         {
-            DriveItemsBox.Text += $"{path}{Environment.NewLine}";
-            Log($"Added to Dew Drive staging list: {path}");
+            return;
+        }
+
+        string folder = DriveFolderBox.Text?.Trim() ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(folder))
+        {
+            foreach (string path in pathList)
+            {
+                DriveItemsBox.Text += $"{path}{Environment.NewLine}";
+                Log($"Staged Dew Drive item: {path}");
+            }
+
+            DriveStatusText.Text = "Choose a local folder to copy staged items.";
+            return;
+        }
+
+        try
+        {
+            IReadOnlyList<string> copied = driveService.CopyIntoFolder(folder, pathList);
+            foreach (string path in copied)
+            {
+                DriveItemsBox.Text += $"Copied: {path}{Environment.NewLine}";
+                Log($"Copied into Dew Drive: {path}");
+            }
+
+            DriveStatusText.Text = $"Copied {copied.Count} item(s) into {folder}";
+            SetStatus("Dew Drive copy complete.");
+        }
+        catch (Exception ex)
+        {
+            SetStatus("Dew Drive copy failed.");
+            Log(ex.Message);
         }
     }
 
@@ -257,44 +368,42 @@ public sealed partial class MainWindow : Window
         string folder = DriveFolderBox.Text?.Trim() ?? string.Empty;
         if (string.IsNullOrWhiteSpace(folder))
         {
+            SetStatus("Drive folder required.");
             Log("Choose a local Dew Drive folder before running a drive command.");
             return;
         }
 
-        List<string> args = ["dew-drive", command, "--folder", folder];
         string registryImage = DriveRegistryImageBox.Text?.Trim() ?? string.Empty;
-        if (!string.IsNullOrWhiteSpace(registryImage))
-        {
-            args.Add("--registry-image");
-            args.Add(registryImage);
-        }
-
         if (command == "sync")
         {
-            args.Add("--mode");
-            args.Add(SelectedDriveMode());
-            AddPatternArgs(args, "--include", DriveIncludePatternsBox.Text);
-            AddPatternArgs(args, "--exclude", DriveExcludePatternsBox.Text);
-            if (push)
+            if (push && string.IsNullOrWhiteSpace(registryImage))
             {
-                args.Add("--push");
+                SetStatus("Remote required.");
+                Log("Enter a Git remote or registry image before using Snapshot + Push.");
+                return;
             }
+
+            await RunAndLogAsync(cliService.SyncDewDriveFolderAsync(folder, registryImage, push));
+            return;
         }
 
-        await RunAndLogAsync(cliService.RunCliAsync(args));
-    }
-
-    private string SelectedDriveMode()
-    {
-        return (DriveEncryptionModeBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? "standard";
-    }
-
-    private static void AddPatternArgs(List<string> args, string option, string? value)
-    {
-        foreach (string pattern in (value ?? string.Empty).Split([Environment.NewLine, ",", ";"], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        if (command == "pull")
         {
-            args.Add(option);
-            args.Add(pattern);
+            if (string.IsNullOrWhiteSpace(registryImage))
+            {
+                SetStatus("Remote required.");
+                Log("Enter a registry image before pulling a Dew Drive.");
+                return;
+            }
+
+            await RunAndLogAsync(cliService.PullDewDriveAsync(registryImage, folder));
+            return;
+        }
+
+        if (command == "restore")
+        {
+            string commit = string.IsNullOrWhiteSpace(DriveCommitBox.Text) ? "HEAD" : DriveCommitBox.Text.Trim();
+            await RunAndLogAsync(cliService.RestoreDewDriveFolderAsync(folder, commit));
         }
     }
 
@@ -302,16 +411,19 @@ public sealed partial class MainWindow : Window
     {
         if (!selectionService.AddPath(path, kind))
         {
+            SetStatus("Already selected.");
             return;
         }
 
         DewPathItem item = selectionService.SelectedPaths[^1];
         selectedPaths.Add(item);
+        UpdateSelectionContext();
         Log($"Added {kind.ToLowerInvariant()}: {path}");
     }
 
     private async Task RunAndLogAsync(Task<DewCommandResult> commandTask)
     {
+        SetStatus("Running...");
         try
         {
             DewCommandResult result = await commandTask;
@@ -327,11 +439,40 @@ public sealed partial class MainWindow : Window
             }
 
             Log($"Exit code: {result.ExitCode}");
+            SetStatus(result.ExitCode == 0 ? "Complete." : $"Exited with code {result.ExitCode}.");
         }
         catch (Exception ex)
         {
+            SetStatus("Command failed.");
             Log(ex.Message);
         }
+    }
+
+    private void RefreshContainerList()
+    {
+        settings = settingsService.Load();
+        containers.Clear();
+        foreach (ContainerProfile profile in settings.Containers ?? [])
+        {
+            string label = string.IsNullOrWhiteSpace(profile.Path) ? profile.Name : $"{profile.Name} - {profile.Path}";
+            containers.Add(label);
+        }
+
+        ContainerStatusText.Text = containers.Count == 0 ? "No saved containers." : $"{containers.Count} saved container(s).";
+    }
+
+    private void UpdateSelectionContext()
+    {
+        SelectionSummaryText.Text = selectedPaths.Count == 0
+            ? "No files or folders selected."
+            : $"{selectedPaths.Count} selected item(s).";
+        DewPathItem? first = selectedPaths.FirstOrDefault();
+        HistoryTargetBox.Text = first is null ? string.Empty : DewPathService.RepoForSource(first.Path);
+    }
+
+    private void SetStatus(string message)
+    {
+        StatusText.Text = message;
     }
 
     private static string QuoteForLog(string value)

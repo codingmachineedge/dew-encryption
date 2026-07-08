@@ -1136,6 +1136,8 @@ def dew_drive_sync_folder(folder: Path, registry_image: str = "", push: bool = F
     folder = folder.expanduser().resolve()
     if not folder.exists():
         raise DewError(f"Dew Drive folder does not exist: {folder}")
+    if push and not registry_image:
+        raise DewError("A Git remote or registry image is required when --push is used with --folder.")
     result = snapshot([folder])
     if push and registry_image:
         subprocess.run(["git", "-C", str(result.repo), "push", registry_image, "HEAD"], check=True)
@@ -1710,20 +1712,31 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if argv[:2] == ["dew-drive", "sync"]:
         parser = argparse.ArgumentParser(prog="dew-encryption dew-drive sync", description="Encrypt a Dew Drive profile and publish it as a Docker/OCI image.")
-        parser.add_argument("name", help="Dew Drive profile name.")
+        parser.add_argument("name", nargs="?", help="Dew Drive profile name.")
+        parser.add_argument("--folder", help="Snapshot a local Dew Drive folder directly.")
         parser.add_argument("--push", action="store_true", help="Push the image after a successful Docker build.")
-        parser.add_argument("--registry", help="Docker/OCI image tag, for example ghcr.io/user/drive:latest.")
+        parser.add_argument("--registry", "--registry-image", dest="registry", help="Docker/OCI image tag or Git remote.")
         args = parser.parse_args(argv[2:])
         try:
-            result = dew_drive_sync(args.name, push=args.push, registry=args.registry)
+            if args.folder:
+                result = dew_drive_sync(Path(args.folder), args.registry or "", push=args.push)
+            else:
+                if not args.name:
+                    parser.error("name is required unless --folder is supplied")
+                result = dew_drive_sync(args.name, push=args.push, registry=args.registry)
         except DewError as exc:
             print(f"dew encryption failed: {exc}", file=sys.stderr)
             return 1
-        print(f"Dew Drive image: {result.image}")
-        print(f"Payload: /dew-drive/{result.payload.name}")
-        print(f"Metadata: /dew-drive/{result.metadata.name}")
-        if result.pushed:
-            print("Pushed: yes")
+        if isinstance(result, DewDriveSyncResult):
+            print(f"Dew Drive image: {result.image}")
+            print(f"Payload: /dew-drive/{result.payload.name}")
+            print(f"Metadata: /dew-drive/{result.metadata.name}")
+            if result.pushed:
+                print("Pushed: yes")
+        else:
+            print(f"Dew Drive folder: {result.source}")
+            print(f"Repo: {result.repo}")
+            print(f"Commit: {result.commit}")
         return 0
 
     if argv and argv[0] == "portable":
@@ -1855,14 +1868,25 @@ def main(argv: list[str] | None = None) -> int:
         pull_parser.add_argument("--password-env", help="Read the encryption password from this environment variable.")
 
         restore_parser = subparsers.add_parser("restore", help="Restore a named Dew Drive from its registry-backed image.")
-        restore_parser.add_argument("name", help="Dew Drive name or registry image reference.")
-        restore_parser.add_argument("--output", required=True, help="Output file or folder path for restored contents.")
+        restore_parser.add_argument("name", nargs="?", help="Dew Drive name or registry image reference.")
+        restore_parser.add_argument("--folder", help="Restore a local folder-backed Dew Drive from its history repo.")
+        restore_parser.add_argument("--commit", default="HEAD", help="Local history commit to restore when --folder is used.")
+        restore_parser.add_argument("--output", help="Output file or folder path for restored contents.")
         restore_parser.add_argument("--force", action="store_true", help="Replace the output path if it already exists.")
         restore_parser.add_argument("--password-file", help="Read the encryption password from the first line of a file.")
         restore_parser.add_argument("--password-env", help="Read the encryption password from this environment variable.")
 
         args = parser.parse_args(argv[1:])
         try:
+            if args.command == "restore" and args.folder:
+                dew_drive_restore(Path(args.folder), args.commit)
+                print(f"Dew Drive folder restored: {Path(args.folder).expanduser().resolve()}")
+                print(f"Commit: {args.commit}")
+                return 0
+            if not args.output:
+                parser.error("--output is required unless restoring --folder")
+            if args.command == "restore" and not args.name:
+                parser.error("name is required unless --folder is supplied")
             registry_ref = args.registry_ref if args.command == "pull" else dew_drive_registry_ref(args.name)
             password = read_secure_password(
                 "Dew Drive encryption password: ",

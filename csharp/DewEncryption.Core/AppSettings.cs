@@ -33,7 +33,24 @@ public sealed record ContainerProfile(
     DewThemeSettings? Theme = null,
     IReadOnlyList<HookAction>? Hooks = null);
 
-public sealed record AppSettings(VeraCryptSettings Veracrypt, IReadOnlyList<ContainerProfile>? Containers)
+public sealed record DewDriveProfile(
+    string Name = "Default",
+    string LocalPath = "",
+    string Folder = "",
+    string RegistryRef = "",
+    string RegistryImage = "",
+    string EncryptionMode = "7zip",
+    string LastSync = "",
+    bool AutoPush = false,
+    IReadOnlyList<string>? IncludePatterns = null,
+    IReadOnlyList<string>? ExcludePatterns = null);
+
+public sealed record DewDriveSettings(
+    string DockerPath = "",
+    string DefaultRegistry = "",
+    IReadOnlyList<DewDriveProfile>? Drives = null);
+
+public sealed record AppSettings(VeraCryptSettings Veracrypt, IReadOnlyList<ContainerProfile>? Containers, DewDriveSettings? DewDrives = null)
 {
-    public static AppSettings Default => new(new VeraCryptSettings(), []);
+    public static AppSettings Default => new(new VeraCryptSettings(), [], new DewDriveSettings(Drives: []));
 }
