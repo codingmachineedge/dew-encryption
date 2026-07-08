@@ -1318,6 +1318,281 @@ def run_custom_remote_upload(source: Path, command_template: str) -> str:
     return proc.stdout.strip()
 
 
+def _safe_repo_name(source: Path) -> str:
+    return "".join(ch if ch.isalnum() or ch in "._-" else "-" for ch in source.resolve().name).strip(".-") or "encrypted-source"
+
+
+
+def detect_buildable_source_commands(source: Path) -> tuple[str, str]:
+    """Infer reasonable build and run commands for common repository types."""
+    source = source.expanduser().resolve()
+    if (source / "pyproject.toml").exists() or (source / "setup.py").exists():
+        run_command = "python -m dew_encryption.gui" if (source / "dew_encryption" / "gui.py").exists() else "python -m pip --version"
+        return "python -m pip install -e .", run_command
+    package_json = source / "package.json"
+    if package_json.exists():
+        try:
+            package = json.loads(package_json.read_text(encoding="utf-8"))
+            scripts = package.get("scripts", {}) if isinstance(package, dict) else {}
+        except (OSError, json.JSONDecodeError):
+            scripts = {}
+        build = "npm install"
+        if isinstance(scripts, dict) and "build" in scripts:
+            build = "npm install && npm run build"
+        if isinstance(scripts, dict):
+            for script in ("start", "dev", "serve"):
+                if script in scripts:
+                    return build, f"npm run {script}"
+        return build, "npm start"
+    if any(source.glob("*.sln")):
+        solution = next(source.glob("*.sln"))
+        return f"dotnet build {solution.name}", f"dotnet run --project {solution.name}"
+    if any(source.rglob("*.csproj")):
+        project = next(source.rglob("*.csproj"))
+        rel = project.relative_to(source).as_posix()
+        return f"dotnet build {rel}", f"dotnet run --project {rel}"
+    if (source / "Cargo.toml").exists():
+        return "cargo build", "cargo run"
+    if (source / "Makefile").exists() or (source / "makefile").exists():
+        return "make", "make run"
+    return "", ""
+
+def create_buildable_encrypted_source(
+    source: Path,
+    output: Path,
+    password: str,
+    remote: str = "",
+    branch: str = "",
+    build_command: str = "",
+    run_command: str = "",
+) -> Path:
+    """Create a self-contained Python GUI manager with an encrypted repository payload embedded."""
+    import base64
+
+    source = source.expanduser().resolve()
+    output = output.expanduser().resolve()
+    if not source.exists() or not source.is_dir():
+        raise DewError(f"Source repository folder does not exist: {source}")
+    if not password:
+        raise DewError("An encryption password is required.")
+    if not (source / ".git").exists():
+        raise DewError(f"Source is not a Git repository: {source}")
+    seven_zip = find_executable(
+        "7z",
+        [
+            Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "7-Zip" / "7z.exe",
+            Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)")) / "7-Zip" / "7z.exe",
+        ],
+    )
+    git = find_executable("git")
+    remote = remote.strip()
+    if remote:
+        try:
+            run([str(git), "ls-remote", remote], cwd=source)
+        except DewError as exc:
+            raise DewError(f"Unable to read pull remote before baking manager: {remote}") from exc
+    branch = branch.strip()
+    if not branch:
+        try:
+            branch = run([str(git), "rev-parse", "--abbrev-ref", "HEAD"], cwd=source) or "main"
+        except DewError:
+            branch = "main"
+    detected_build, detected_run = detect_buildable_source_commands(source)
+    build_command = build_command or detected_build
+    run_command = run_command or detected_run
+
+    with tempfile.TemporaryDirectory(prefix="dew-buildable-source-") as temp_dir:
+        temp = Path(temp_dir)
+        payload = temp / "source.7z"
+        run([
+            str(seven_zip),
+            "a",
+            "-t7z",
+            "-mx=9",
+            f"-p{password}",
+            "-mhe=on",
+            str(payload),
+            str(source),
+            f"-xr!{ARCHIVE_DIR_NAME}",
+        ])
+        encoded = base64.b64encode(payload.read_bytes()).decode("ascii")
+
+    manager = """#!/usr/bin/env python3
+from __future__ import annotations
+
+import base64
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import threading
+import tkinter as tk
+from pathlib import Path
+from tkinter import messagebox, simpledialog, ttk
+
+APP_TITLE = "Dew Buildable Encrypted Source Manager"
+REPO_NAME = __REPO_NAME__
+REMOTE = __REMOTE__
+BRANCH = __BRANCH__
+BUILD_COMMAND = __BUILD_COMMAND__
+RUN_COMMAND = __RUN_COMMAND__
+PAYLOAD_B64 = __PAYLOAD_B64__
+
+
+def tool(name):
+    found = shutil.which(name)
+    if not found:
+        raise RuntimeError(f"Required executable not found: {name}")
+    return found
+
+
+def run(cmd, cwd=None, shell=False):
+    proc = subprocess.run(cmd, cwd=str(cwd) if cwd else None, shell=shell, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if proc.returncode != 0:
+        raise RuntimeError(f"Command failed ({proc.returncode}): {cmd}\n{proc.stdout}")
+    return proc.stdout.strip()
+
+
+def cache_root():
+    base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / ".cache")
+    root = base / "DewEncryption" / "buildable-source" / REPO_NAME
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def repo_dir():
+    return cache_root() / REPO_NAME
+
+
+def decrypt_embedded(password, log):
+    seven = tool("7z")
+    root = cache_root()
+    repo = repo_dir()
+    if repo.exists():
+        return False
+    with tempfile.TemporaryDirectory(prefix="dew-embedded-") as temp_dir:
+        payload = Path(temp_dir) / "source.7z"
+        payload.write_bytes(base64.b64decode(PAYLOAD_B64))
+        run([seven, "x", f"-p{password}", "-y", str(payload), f"-o{root}"])
+    log(f"Decrypted embedded source to {repo}")
+    return True
+
+
+def pull_if_enabled(log):
+    if not REMOTE:
+        log("Pull remote is disabled; running cached source.")
+        return False
+    git = tool("git")
+    repo = repo_dir()
+    before = run([git, "rev-parse", "HEAD"], cwd=repo) if (repo / ".git").exists() else ""
+    if not (repo / ".git").exists():
+        raise RuntimeError("Decrypted source is not a Git repository.")
+    try:
+        run([git, "remote", "get-url", "origin"], cwd=repo)
+    except RuntimeError:
+        run([git, "remote", "add", "origin", REMOTE], cwd=repo)
+    run([git, "fetch", "origin", BRANCH], cwd=repo)
+    run([git, "merge", "--ff-only", f"origin/{BRANCH}"], cwd=repo)
+    after = run([git, "rev-parse", "HEAD"], cwd=repo)
+    changed = before != after
+    log("Pulled a new version; build will run." if changed else "Already at latest version; build skipped.")
+    return changed
+
+
+def shell_run(command, log):
+    if not command:
+        return
+    log(f"$ {command}")
+    log(run(command, cwd=repo_dir(), shell=True))
+
+
+def build_and_run(password, build_command, run_command, log):
+    if not run_command:
+        raise RuntimeError("Run command is empty. Enter a command in the manager before starting.")
+    first = decrypt_embedded(password, log)
+    changed = pull_if_enabled(log)
+    if first or changed:
+        shell_run(build_command, log)
+    else:
+        log("No new version detected; build command was not run.")
+    shell_run(run_command, log)
+
+
+class App(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title(APP_TITLE)
+        self.geometry("760x460")
+        ttk.Label(self, text=f"Encrypted source: {REPO_NAME}").pack(anchor="w", padx=12, pady=(12, 4))
+        ttk.Label(self, text=f"Pull remote: {REMOTE or 'disabled'}").pack(anchor="w", padx=12)
+        form = ttk.Frame(self)
+        form.pack(fill="x", padx=12, pady=8)
+        form.columnconfigure(1, weight=1)
+        self.build_command = tk.StringVar(value=BUILD_COMMAND)
+        self.run_command = tk.StringVar(value=RUN_COMMAND)
+        ttk.Label(form, text="Build command").grid(row=0, column=0, sticky="w", pady=2)
+        ttk.Entry(form, textvariable=self.build_command).grid(row=0, column=1, sticky="ew", padx=(8, 0), pady=2)
+        ttk.Label(form, text="Run command").grid(row=1, column=0, sticky="w", pady=2)
+        ttk.Entry(form, textvariable=self.run_command).grid(row=1, column=1, sticky="ew", padx=(8, 0), pady=2)
+        bar = ttk.Frame(self)
+        bar.pack(fill="x", padx=12, pady=8)
+        ttk.Button(bar, text="Build/Run", command=self.start).pack(side="left")
+        ttk.Button(bar, text="Open Cache", command=self.open_cache).pack(side="left", padx=8)
+        self.logbox = tk.Text(self, wrap="word")
+        self.logbox.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+
+    def log(self, text):
+        self.logbox.insert("end", str(text) + "\n")
+        self.logbox.see("end")
+
+    def start(self):
+        password = simpledialog.askstring("Password", "Encrypted source password:", show="*", parent=self)
+        if not password:
+            return
+
+        def worker():
+            try:
+                build_and_run(password, self.build_command.get().strip(), self.run_command.get().strip(), self.log)
+                self.log("Done.")
+            except Exception as exc:
+                self.log(f"ERROR: {exc}")
+                messagebox.showerror(APP_TITLE, str(exc), parent=self)
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def open_cache(self):
+        path = cache_root()
+        if sys.platform.startswith("win"):
+            os.startfile(path)
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(path)])
+        else:
+            subprocess.Popen(["xdg-open", str(path)])
+
+
+if __name__ == "__main__":
+    App().mainloop()
+"""
+    replacements = {
+        "__REPO_NAME__": repr(_safe_repo_name(source)),
+        "__REMOTE__": repr(remote),
+        "__BRANCH__": repr(branch),
+        "__BUILD_COMMAND__": repr(build_command),
+        "__RUN_COMMAND__": repr(run_command),
+        "__PAYLOAD_B64__": repr(encoded),
+    }
+    for key, value in replacements.items():
+        manager = manager.replace(key, value)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(manager, encoding="utf-8")
+    try:
+        output.chmod(output.stat().st_mode | 0o111)
+    except OSError:
+        pass
+    return output
+
+
 def watch(paths: list[Path], interval: float = 5.0, once: bool = False) -> None:
     last_commit = ""
     while True:
@@ -1332,6 +1607,34 @@ def watch(paths: list[Path], interval: float = 5.0, once: bool = False) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] == "buildable-source":
+        parser = argparse.ArgumentParser(prog="dew-encryption buildable-source", description="Create a self-contained encrypted source GUI manager.")
+        subparsers = parser.add_subparsers(dest="command", required=True)
+        create_parser = subparsers.add_parser("create", help="Encrypt a Git repo into a build/run manager Python file.")
+        create_parser.add_argument("source", help="Git repository folder to encrypt and bake into the manager.")
+        create_parser.add_argument("output", help="Output manager .py file.")
+        create_parser.add_argument("--password", help="Encryption password. If omitted, a hidden prompt is shown.")
+        create_parser.add_argument("--remote", default="", help="Optional Git remote URL to pull before running.")
+        create_parser.add_argument("--branch", default="", help="Remote branch to fast-forward when pull is enabled. Defaults to current branch.")
+        create_parser.add_argument("--build-command", default="", help="Command run after first decrypt or after a successful pull update. Auto-detected when omitted where possible.")
+        create_parser.add_argument("--run-command", default="", help="Command run every time after any required build step. Auto-detected when omitted where possible, and editable in the generated GUI.")
+        args = parser.parse_args(argv[1:])
+        try:
+            password = args.password or getpass.getpass("Encrypted source password: ")
+            output = create_buildable_encrypted_source(
+                Path(args.source),
+                Path(args.output),
+                password,
+                remote=args.remote,
+                branch=args.branch,
+                build_command=args.build_command,
+                run_command=args.run_command,
+            )
+        except DewError as exc:
+            print(f"dew encryption failed: {exc}", file=sys.stderr)
+            return 1
+        print(f"Buildable encrypted source manager: {output}")
+        return 0
     if argv[:2] == ["dew-drive", "sync"]:
         parser = argparse.ArgumentParser(prog="dew-encryption dew-drive sync", description="Encrypt a Dew Drive profile and publish it as a Docker/OCI image.")
         parser.add_argument("name", help="Dew Drive profile name.")
