@@ -78,9 +78,32 @@ public sealed class DewCliService
         return RunCliAsync(args, cancellationToken);
     }
 
-    public Task<DewCommandResult> PullDewDriveAsync(string registryRef, string outputFolder, CancellationToken cancellationToken = default)
+    public Task<DewCommandResult> SyncDewDriveProfileAsync(string profileName, string? registry, bool push, string? password, CancellationToken cancellationToken = default)
     {
-        return RunCliAsync(["dew-drive", "pull", registryRef, "--output", outputFolder], cancellationToken);
+        List<string> args = ["dew-drive", "sync", profileName];
+        if (!string.IsNullOrWhiteSpace(registry))
+        {
+            args.Add("--registry");
+            args.Add(registry);
+        }
+
+        if (push)
+        {
+            args.Add("--push");
+        }
+
+        return RunCliAsync(args, cancellationToken, PasswordEnvironment(password));
+    }
+
+    public Task<DewCommandResult> PullDewDriveAsync(string registryRef, string outputFolder, string? password = null, bool force = false, CancellationToken cancellationToken = default)
+    {
+        List<string> args = ["dew-drive", "pull", registryRef, "--output", outputFolder, "--password-env", "DEW_DRIVE_PASSWORD"];
+        if (force)
+        {
+            args.Add("--force");
+        }
+
+        return RunCliAsync(args, cancellationToken, PasswordEnvironment(password));
     }
 
     public Task<DewCommandResult> RestoreDewDriveFolderAsync(string folder, string commit = "HEAD", CancellationToken cancellationToken = default)
@@ -88,23 +111,69 @@ public sealed class DewCliService
         return RunCliAsync(["dew-drive", "restore", "--folder", folder, "--commit", commit], cancellationToken);
     }
 
-    public Task<DewCommandResult> RunCliAsync(IEnumerable<string> arguments, CancellationToken cancellationToken = default)
+    public Task<DewCommandResult> SaveVeraCryptSettingsAsync(VeraCryptSettings settings, CancellationToken cancellationToken = default)
     {
-        return RunToolWithFallbackAsync(CliFileName, ["-m", "dew_encryption.core"], arguments, cancellationToken);
+        List<string> args =
+        [
+            "veracrypt-settings",
+            "--encryption",
+            settings.Encryption,
+            "--hash",
+            settings.Hash,
+            "--filesystem",
+            settings.Filesystem,
+            "--pim",
+            settings.Pim,
+            "--size-padding-mb",
+            settings.SizePaddingMb.ToString(),
+            "--size-multiplier",
+            settings.SizeMultiplier.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            "--minimum-size-mb",
+            settings.MinimumSizeMb.ToString(),
+            "--keep-source-after-encrypt",
+            settings.KeepSourceAfterEncrypt ? "true" : "false",
+            "--keep-container-after-decrypt",
+            settings.KeepContainerAfterDecrypt ? "true" : "false",
+        ];
+        if (!string.IsNullOrWhiteSpace(settings.VeraCryptPath))
+        {
+            args.Add("--veracrypt-path");
+            args.Add(settings.VeraCryptPath);
+        }
+
+        return RunCliAsync(args, cancellationToken);
     }
 
-    private static async Task<DewCommandResult> RunToolWithFallbackAsync(string fileName, IReadOnlyList<string> pythonModulePrefix, IEnumerable<string> arguments, CancellationToken cancellationToken)
+    public Task<DewCommandResult> InstallVeraCryptAsync(CancellationToken cancellationToken = default)
+    {
+        return RunProcessAsync(
+            "winget",
+            ["install", "-e", "--id", "IDRIX.VeraCrypt", "--silent", "--accept-source-agreements", "--accept-package-agreements"],
+            cancellationToken);
+    }
+
+    public Task<DewCommandResult> RunCliAsync(IEnumerable<string> arguments, CancellationToken cancellationToken = default, IReadOnlyDictionary<string, string>? environment = null)
+    {
+        return RunToolWithFallbackAsync(CliFileName, ["-m", "dew_encryption.core"], arguments, cancellationToken, environment);
+    }
+
+    private static async Task<DewCommandResult> RunToolWithFallbackAsync(string fileName, IReadOnlyList<string> pythonModulePrefix, IEnumerable<string> arguments, CancellationToken cancellationToken, IReadOnlyDictionary<string, string>? environment = null)
     {
         string[] argumentArray = arguments.ToArray();
         try
         {
-            return await RunProcessAsync(fileName, argumentArray, cancellationToken).ConfigureAwait(false);
+            return await RunProcessAsync(fileName, argumentArray, cancellationToken, environment: environment).ConfigureAwait(false);
         }
         catch (Win32Exception ex) when (IsFileNotFound(ex))
         {
             string python = Environment.GetEnvironmentVariable("DEW_ENCRYPTION_PYTHON") ?? "python";
-            return await RunProcessAsync(python, pythonModulePrefix.Concat(argumentArray), cancellationToken, ResolvePythonWorkingDirectory()).ConfigureAwait(false);
+            return await RunProcessAsync(python, pythonModulePrefix.Concat(argumentArray), cancellationToken, ResolvePythonWorkingDirectory(), environment).ConfigureAwait(false);
         }
+    }
+
+    private static IReadOnlyDictionary<string, string>? PasswordEnvironment(string? password)
+    {
+        return string.IsNullOrWhiteSpace(password) ? null : new Dictionary<string, string> { ["DEW_DRIVE_PASSWORD"] = password };
     }
 
     private static bool IsFileNotFound(Win32Exception exception)
@@ -126,7 +195,7 @@ public sealed class DewCliService
         return null;
     }
 
-    public static async Task<DewCommandResult> RunProcessAsync(string fileName, IEnumerable<string> arguments, CancellationToken cancellationToken = default, string? workingDirectory = null)
+    public static async Task<DewCommandResult> RunProcessAsync(string fileName, IEnumerable<string> arguments, CancellationToken cancellationToken = default, string? workingDirectory = null, IReadOnlyDictionary<string, string>? environment = null)
     {
         string[] argumentArray = arguments.ToArray();
         ProcessStartInfo startInfo = new()
@@ -139,6 +208,10 @@ public sealed class DewCliService
         if (!string.IsNullOrWhiteSpace(workingDirectory))
         {
             startInfo.WorkingDirectory = workingDirectory;
+        }
+        foreach (KeyValuePair<string, string> item in environment ?? new Dictionary<string, string>())
+        {
+            startInfo.Environment[item.Key] = item.Value;
         }
 
         foreach (string argument in argumentArray)

@@ -815,7 +815,7 @@ def sha256_file(path: Path) -> str:
 
 
 def validate_restored_files(output: Path, metadata: dict) -> list[str]:
-    files = metadata.get("files")
+    files = metadata.get("files") or metadata.get("manifest")
     if not isinstance(files, list):
         return ["metadata does not include a files list; skipped per-file validation"]
     warnings: list[str] = []
@@ -835,6 +835,23 @@ def validate_restored_files(output: Path, metadata: dict) -> list[str]:
         if isinstance(expected_hash, str) and target.is_file() and sha256_file(target).lower() != expected_hash.lower():
             raise DewError(f"Restored file hash mismatch: {rel}")
     return warnings
+
+
+def decrypt_dew_drive_payload(payload: Path, password: str, output: Path, metadata: dict) -> Path:
+    mode = str(metadata.get("encryption_mode") or "").lower()
+    if payload.name.endswith(VERACRYPT_EXT) or payload.suffix.lower() == ".hc" or mode in {"veracrypt", "vera", "vc"}:
+        return veracrypt_decrypt_container(payload, password, output=output, keep_container=True)
+
+    seven_zip = find_executable(
+        "7z",
+        [
+            Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "7-Zip" / "7z.exe",
+            Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)")) / "7-Zip" / "7z.exe",
+        ],
+    )
+    output.mkdir(parents=True, exist_ok=True)
+    run([str(seven_zip), "x", "-y", f"-p{password}", f"-o{output}", str(payload)])
+    return output
 
 
 def restore_dew_drive_from_registry(
@@ -869,7 +886,7 @@ def restore_dew_drive_from_registry(
             payload = metadata_payload_path(copied, metadata)
             restore_target = temp / "restored-output"
             try:
-                restored = veracrypt_decrypt_container(payload, password, output=restore_target, keep_container=True)
+                restored = decrypt_dew_drive_payload(payload, password, restore_target, metadata)
             except DewError as exc:
                 raise DewError(f"Decryption failed: {exc}") from exc
             warnings = validate_restored_files(restored, metadata)
@@ -1067,7 +1084,7 @@ def copy_dew_drive_selection(source: Path, staging: Path, profile: DewDriveProfi
 
 def encrypt_dew_drive_staging(staging: Path, output_dir: Path, password: str, mode: str) -> Path:
     mode = mode.lower()
-    if mode in {"7z", "7zip", "archive"}:
+    if mode in {"7z", "7zip", "archive", "password", "standard"}:
         seven_zip = find_executable(
             "7z",
             [

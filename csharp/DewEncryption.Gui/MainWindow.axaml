@@ -95,35 +95,53 @@
         <Grid ColumnDefinitions="340,*" Margin="0,12,0,0">
           <Border Classes="panel" Margin="0,0,14,0">
             <Grid RowDefinitions="Auto,*">
-              <TextBlock Text="Drive Profiles" Classes="sectionTitle" />
+              <TextBlock Text="Stream Folders" Classes="sectionTitle" />
               <ListBox x:Name="DriveProfilesList" Grid.Row="1" Margin="0,10,0,0" SelectionChanged="DriveProfilesList_SelectionChanged" />
             </Grid>
           </Border>
 
           <Border Classes="panel" Grid.Column="1">
-            <Grid RowDefinitions="Auto,Auto,Auto,*">
-              <UniformGrid Columns="2" Rows="2">
-                <TextBox Watermark="Name" x:Name="DriveNameBox" Margin="0,0,8,8" />
-                <TextBox Watermark="Git remote or registry image" x:Name="DriveRegistryImageBox" Margin="0,0,0,8" />
-                <TextBox Watermark="Local folder" x:Name="DriveFolderBox" Margin="0,0,8,8" />
+            <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto">
+              <TextBlock Text="Stream Folder" Classes="sectionTitle" />
+              <UniformGrid Grid.Row="1" Columns="2" Rows="2">
+                <TextBox Watermark="Drive name" x:Name="DriveNameBox" Margin="0,8,8,8" />
+                <TextBox Watermark="Docker / OCI image" x:Name="DriveRegistryImageBox" Margin="0,8,0,8" />
+                <TextBox Watermark="Local stream folder" x:Name="DriveFolderBox" Margin="0,0,8,8" />
                 <TextBox Watermark="Restore commit" x:Name="DriveCommitBox" Text="HEAD" Margin="0,0,0,8" />
               </UniformGrid>
-              <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,6,0,12">
-                <Button Content="Save Profile" Click="NewDrive_Click" />
+              <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,6,0,12">
+                <Button Content="Save Profile" Classes="primary" Click="NewDrive_Click" />
                 <Button Content="Pick Folder" Classes="secondary" Click="PickDriveFolder_Click" />
-                <Button Content="Copy Files In" Classes="secondary" Click="AddDriveFiles_Click" />
-                <Button Content="Copy Folder In" Classes="secondary" Click="AddDriveFolder_Click" />
+                <Button Content="Add Files" Classes="outline" Click="AddDriveFiles_Click" />
+                <Button Content="Add Folder" Classes="outline" Click="AddDriveFolder_Click" />
               </StackPanel>
-              <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,12">
-                <Button Content="Snapshot" Classes="primary" Click="SyncDrive_Click" />
-                <Button Content="Snapshot + Push" Classes="primary" Click="SyncPushDrive_Click" />
-                <Button Content="Pull Remote" Classes="secondary" Click="PullDrive_Click" />
-                <Button Content="Restore" Classes="secondary" Click="RestoreDrive_Click" />
-              </StackPanel>
-              <Grid Grid.Row="3" RowDefinitions="Auto,*">
-                <TextBlock x:Name="DriveStatusText" Classes="muted" TextWrapping="Wrap" />
-                <TextBox Grid.Row="1" x:Name="DriveItemsBox" AcceptsReturn="True" IsReadOnly="True" Watermark="Copied items" TextWrapping="Wrap" Margin="0,10,0,0" />
-              </Grid>
+
+              <TextBlock Grid.Row="3" Text="Encryption" Classes="sectionTitle" Margin="0,2,0,8" />
+              <UniformGrid Grid.Row="4" Columns="4" Rows="2">
+                <ComboBox x:Name="DriveEncryptionModeBox" SelectedIndex="1" Margin="0,0,8,8">
+                  <ComboBoxItem Content="7zip" />
+                  <ComboBoxItem Content="veracrypt" />
+                </ComboBox>
+                <TextBox x:Name="DrivePasswordBox" Watermark="Password" PasswordChar="*" Margin="0,0,8,8" />
+                <TextBox x:Name="DriveVeraCryptPathBox" Watermark="VeraCrypt path" Margin="0,0,8,8" />
+                <TextBox x:Name="DriveVcPimBox" Watermark="PIM" Text="0" Margin="0,0,0,8" />
+                <TextBox x:Name="DriveVcEncryptionBox" Watermark="Algorithm" Text="AES" Margin="0,0,8,8" />
+                <TextBox x:Name="DriveVcHashBox" Watermark="Hash" Text="SHA-512" Margin="0,0,8,8" />
+                <TextBox x:Name="DriveVcFilesystemBox" Watermark="Filesystem" Text="exFAT" Margin="0,0,8,8" />
+                <CheckBox x:Name="DriveAutoPushBox" Content="Auto push" Margin="0,8,0,8" />
+              </UniformGrid>
+              <WrapPanel Grid.Row="5" Margin="0,0,0,12">
+                <Button Content="Install VC" Classes="tonal" Click="InstallVeraCrypt_Click" />
+                <Button Content="Save VC Settings" Classes="outline" Click="SaveVeraCryptSettings_Click" />
+                <Button Content="Auto Sync" Classes="primary" Click="StartDriveAutoSync_Click" />
+                <Button Content="Stop" Classes="outline" Click="StopDriveAutoSync_Click" />
+                <Button Content="Sync" Classes="secondary" Click="SyncDrive_Click" />
+                <Button Content="Push" Classes="primary" Click="SyncPushDrive_Click" />
+                <Button Content="Pull" Classes="secondary" Click="PullDrive_Click" />
+                <Button Content="Restore" Classes="outline" Click="RestoreDrive_Click" />
+              </WrapPanel>
+              <TextBlock Grid.Row="6" x:Name="DriveStatusText" Classes="muted" TextWrapping="Wrap" />
+              <TextBox x:Name="DriveItemsBox" IsVisible="False" />
             </Grid>
           </Border>
         </Grid>
@@ -133,7 +151,7 @@
     <Border Grid.Row="2" Classes="panel">
       <Grid RowDefinitions="Auto,*">
         <TextBlock Text="Activity" Classes="sectionTitle" />
-        <TextBox x:Name="LogBox" Grid.Row="1" Height="130" AcceptsReturn="True" IsReadOnly="True" TextWrapping="Wrap" Margin="0,8,0,0" />
+        <TextBox x:Name="LogBox" Grid.Row="1" Height="64" AcceptsReturn="True" IsReadOnly="True" TextWrapping="Wrap" Margin="0,8,0,0" />
       </Grid>
     </Border>
   </Grid>

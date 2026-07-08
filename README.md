@@ -230,7 +230,7 @@ Files and folders also get VeraCrypt container actions:
 - `dew encryption VeraCrypt encrypt` creates a `.dew.hc` VeraCrypt container, copies each selected file or folder into its own container, dismounts the container, and removes the original by default.
 - `.hc` files get `dew encryption VeraCrypt decrypt`, which can decrypt one or more selected containers and restores their contents beside them.
 
-These actions prompt for the VeraCrypt password in a console window. The automated PowerShell installer tries to install VeraCrypt with `winget`; the full Windows installer also includes an optional VeraCrypt dependency task.
+These actions prompt for the VeraCrypt password in a console window. The automated PowerShell installer installs VeraCrypt with `winget` when it is missing; the full Windows installer includes the same VeraCrypt dependency task by default.
 
 ## Use The GUI
 
@@ -256,6 +256,18 @@ History manager actions:
 - `Restore Selected` restores the selected file or folder to the chosen commit.
 - `Open Source` opens the selected folder in Explorer.
 - `Open Repo` opens the local `.dew-encryption-repo` folder.
+
+## Dew Drive Stream Folder
+
+The C# GUI `Dew Drive` tab is the OneDrive-style workflow:
+
+1. Pick or create a local stream folder.
+2. Enter a Docker/OCI image such as `ghcr.io/you/dew-drive:latest`.
+3. Choose `veracrypt` encryption and enter the sync password.
+4. Save your VeraCrypt settings or use `Install VeraCrypt`.
+5. Use `Start Auto Sync` to watch local file changes, encrypt the folder, build the Docker image, and push it.
+
+Passwords are passed to the sync process through `DEW_DRIVE_PASSWORD` and are not saved in the profile. The local folder is still a normal folder on disk; remote storage is the encrypted payload inside the Docker/OCI image.
 
 ## Container Manager, Themes, And Hooks
 

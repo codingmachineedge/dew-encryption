@@ -6,18 +6,18 @@
     <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml" />
     <Style Selector="Window">
       <Setter Property="FontFamily" Value="Inter, Segoe UI, Arial" />
-      <Setter Property="Background" Value="#F5F7FA" />
+      <Setter Property="Background" Value="#F7FAF8" />
     </Style>
     <Style Selector="Border.panel">
-      <Setter Property="Background" Value="#FFFFFF" />
-      <Setter Property="BorderBrush" Value="#D8E0EA" />
+      <Setter Property="Background" Value="#FEFBFF" />
+      <Setter Property="BorderBrush" Value="#CAC4D0" />
       <Setter Property="BorderThickness" Value="1" />
-      <Setter Property="CornerRadius" Value="8" />
-      <Setter Property="Padding" Value="14" />
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="Padding" Value="16" />
     </Style>
     <Style Selector="Border.topbar">
-      <Setter Property="Background" Value="#172033" />
-      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Background" Value="#006A6A" />
+      <Setter Property="CornerRadius" Value="12" />
       <Setter Property="Padding" Value="18" />
     </Style>
     <Style Selector="TextBlock.title">
@@ -26,35 +26,51 @@
       <Setter Property="Foreground" Value="#FFFFFF" />
     </Style>
     <Style Selector="TextBlock.subtitle">
-      <Setter Property="Foreground" Value="#C9D7E8" />
+      <Setter Property="Foreground" Value="#D8F2EF" />
     </Style>
     <Style Selector="TextBlock.sectionTitle">
-      <Setter Property="FontSize" Value="15" />
+      <Setter Property="FontSize" Value="16" />
       <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Foreground" Value="#202938" />
+      <Setter Property="Foreground" Value="#1D1B20" />
     </Style>
     <Style Selector="TextBlock.label">
       <Setter Property="FontSize" Value="12" />
       <Setter Property="FontWeight" Value="SemiBold" />
-      <Setter Property="Foreground" Value="#48566A" />
+      <Setter Property="Foreground" Value="#49454F" />
     </Style>
     <Style Selector="TextBlock.muted">
-      <Setter Property="Foreground" Value="#64748B" />
+      <Setter Property="Foreground" Value="#625B71" />
     </Style>
     <Style Selector="Button">
-      <Setter Property="Padding" Value="14,8" />
+      <Setter Property="Padding" Value="16,9" />
       <Setter Property="Margin" Value="0,0,8,0" />
+      <Setter Property="CornerRadius" Value="20" />
     </Style>
     <Style Selector="Button.primary">
-      <Setter Property="Background" Value="#0F766E" />
+      <Setter Property="Background" Value="#006A6A" />
       <Setter Property="Foreground" Value="#FFFFFF" />
     </Style>
     <Style Selector="Button.secondary">
-      <Setter Property="Background" Value="#EAF1F8" />
-      <Setter Property="Foreground" Value="#1E293B" />
+      <Setter Property="Background" Value="#CCE8E7" />
+      <Setter Property="Foreground" Value="#002020" />
+    </Style>
+    <Style Selector="Button.outline">
+      <Setter Property="Background" Value="#00FFFFFF" />
+      <Setter Property="Foreground" Value="#006A6A" />
+      <Setter Property="BorderBrush" Value="#79747E" />
+      <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="Button.tonal">
+      <Setter Property="Background" Value="#E7E0EC" />
+      <Setter Property="Foreground" Value="#1D192B" />
     </Style>
     <Style Selector="TextBox">
-      <Setter Property="MinHeight" Value="34" />
+      <Setter Property="MinHeight" Value="38" />
+      <Setter Property="CornerRadius" Value="8" />
+    </Style>
+    <Style Selector="ComboBox">
+      <Setter Property="MinHeight" Value="38" />
+      <Setter Property="CornerRadius" Value="8" />
     </Style>
   </Application.Styles>
 </Application>

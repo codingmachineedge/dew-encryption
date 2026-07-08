@@ -47,7 +47,7 @@ Name: "{group}\Dew Encryption"; Filename: "{app}\{#MyAppGuiExeName}"
 Name: "{group}\Dew Encryption README"; Filename: "{app}\README.md"
 
 [Tasks]
-Name: "installveracrypt"; Description: "Install VeraCrypt with winget if missing"; GroupDescription: "Optional dependencies:"; Flags: unchecked
+Name: "installveracrypt"; Description: "Install VeraCrypt with winget if missing"; GroupDescription: "Dependencies:"
 
 [Run]
 Filename: "powershell"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""if (-not (Get-Command VeraCrypt -ErrorAction SilentlyContinue)) {{ winget install -e --id IDRIX.VeraCrypt --accept-source-agreements --accept-package-agreements }}"""; Description: "Install VeraCrypt"; Flags: runhidden; Tasks: installveracrypt
