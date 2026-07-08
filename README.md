@@ -126,6 +126,28 @@ Open directly to a folder's history manager:
 dew-encryption-gui C:\Path\To\Folder --history
 ```
 
+
+## Buildable Encrypted Source Manager
+
+Create a special buildable encrypted source software file when you want to ship a whole GitHub checkout as one password-protected GUI manager. The generated Python file contains an encrypted 7-Zip copy of the entire Git repo, prompts for the password in its own Tkinter GUI, decrypts into the user's local cache, optionally pulls a remote branch, and then runs the configured build/run commands.
+
+```powershell
+dew-encryption buildable-source create . .\DewEncryptedSourceManager.py `
+  --password "change-me" `
+  --remote https://github.com/codingmachineedge/dew-encryption.git `
+  --branch main `
+  --build-command "python -m pip install -e ." `
+  --run-command "dew-encryption-gui"
+```
+
+When the manager starts:
+
+- If it is the first run, it decrypts the baked source and runs the build command.
+- If `--remote` was supplied and `git fetch`/fast-forward finds a newer version, it pulls, builds, and runs.
+- If there is no new version or pull is disabled, it skips the build command and just runs the run command.
+
+The generated manager requires Python, Git, and 7-Zip on the target machine. Keep the password private; the source payload is encrypted, but the build and run commands are stored in the manager file so the GUI can operate without extra configuration.
+
 ## C# GUI Target
 
 The `csharp/DewEncryption.Gui` project is an Avalonia/.NET 8 desktop shell for Windows and Linux. It drives the existing `dew-encryption` CLI so the C# interface can share the mature encryption, Git history, VeraCrypt, and hook workflows while the native UI is expanded.
