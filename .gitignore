@@ -1,9 +1,7 @@
 __pycache__/
 *.py[cod]
-.venv/
-dist/
-build/
-*.egg-info/
-.dew-encryption-repo/
-Dew Encryption Archives/
 .pytest_cache/
+
+bin/
+obj/
+.vs/
