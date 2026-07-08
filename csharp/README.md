@@ -27,7 +27,8 @@ The Docker build restores and compiles both the .NET Core library and Avalonia G
 ## Current scope
 
 - Files tab: add files/folders and run the existing `dew-encryption` CLI through `DewEncryption.Core`.
-- History tab: call core library helpers for CLI history and snapshot flows, or launch the existing Python history manager while the C# history UI matures.
-- Containers tab: draft container registration details, snapshot container file history, and test open/close hooks through core library helpers.
+- Files tab: add files/folders, snapshot archives, and refresh the selected item's Git-backed history.
+- Containers tab: save container profiles to the shared settings file, snapshot container file history, and test open/close hooks through core library helpers.
+- Dew Drive tab: save folder-backed profiles, copy files/folders into a local drive folder, snapshot local history, push to a configured remote, pull registry-backed drives, and restore local history commits.
 
 The C# GUI is deliberately a shell over the mature CLI so Windows and Linux behavior stays aligned with the existing automation while reusable .NET app functionality lives in `DewEncryption.Core`.

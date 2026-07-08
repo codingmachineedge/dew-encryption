@@ -96,7 +96,7 @@
           <Border Classes="panel" Margin="0,0,14,0">
             <Grid RowDefinitions="Auto,*">
               <TextBlock Text="Drive Profiles" Classes="sectionTitle" />
-              <ListBox x:Name="DriveProfilesList" Grid.Row="1" Margin="0,10,0,0" />
+              <ListBox x:Name="DriveProfilesList" Grid.Row="1" Margin="0,10,0,0" SelectionChanged="DriveProfilesList_SelectionChanged" />
             </Grid>
           </Border>
 
@@ -109,7 +109,7 @@
                 <TextBox Watermark="Restore commit" x:Name="DriveCommitBox" Text="HEAD" Margin="0,0,0,8" />
               </UniformGrid>
               <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,6,0,12">
-                <Button Content="New" Click="NewDrive_Click" />
+                <Button Content="Save Profile" Click="NewDrive_Click" />
                 <Button Content="Pick Folder" Classes="secondary" Click="PickDriveFolder_Click" />
                 <Button Content="Copy Files In" Classes="secondary" Click="AddDriveFiles_Click" />
                 <Button Content="Copy Folder In" Classes="secondary" Click="AddDriveFolder_Click" />

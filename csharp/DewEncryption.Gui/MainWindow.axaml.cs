@@ -25,6 +25,7 @@ public sealed partial class MainWindow : Window
         ContainersList.ItemsSource = containers;
         DriveProfilesList.ItemsSource = driveProfiles;
         RefreshContainerList();
+        RefreshDriveList();
         UpdateSelectionContext();
         Log("Ready.");
     }
@@ -250,19 +251,37 @@ public sealed partial class MainWindow : Window
         string name = string.IsNullOrWhiteSpace(DriveNameBox.Text) ? "Dew Drive" : DriveNameBox.Text.Trim();
         string folder = DriveFolderBox.Text?.Trim() ?? string.Empty;
         string registry = DriveRegistryImageBox.Text?.Trim() ?? string.Empty;
-        string label = string.IsNullOrWhiteSpace(folder) ? name : $"{name} - {folder}";
-        if (!string.IsNullOrWhiteSpace(registry))
+
+        List<DewDriveProfile> profiles = (settings.DewDrives?.Drives ?? []).ToList();
+        int existingIndex = profiles.FindIndex(item =>
+            string.Equals(item.Name, name, StringComparison.OrdinalIgnoreCase) ||
+            (!string.IsNullOrWhiteSpace(folder) && string.Equals(DriveFolder(item), folder, StringComparison.OrdinalIgnoreCase)));
+
+        DewDriveProfile savedProfile = new(
+            Name: name,
+            LocalPath: folder,
+            Folder: folder,
+            RegistryRef: registry,
+            RegistryImage: registry,
+            EncryptionMode: "7zip",
+            IncludePatterns: [],
+            ExcludePatterns: []);
+        if (existingIndex >= 0)
         {
-            label = $"{label} -> {registry}";
+            profiles[existingIndex] = savedProfile;
+        }
+        else
+        {
+            profiles.Add(savedProfile);
         }
 
-        if (!driveProfiles.Contains(label))
-        {
-            driveProfiles.Add(label);
-        }
-
-        DriveStatusText.Text = label;
-        Log($"Prepared Dew Drive: {label}");
+        DewDriveSettings current = settings.DewDrives ?? new DewDriveSettings(Drives: []);
+        settings = settings with { DewDrives = current with { Drives = profiles } };
+        settingsService.Save(settings);
+        RefreshDriveList();
+        DriveStatusText.Text = $"Saved: {DriveLabel(savedProfile)}";
+        SetStatus("Dew Drive saved.");
+        Log($"Saved Dew Drive profile: {DriveLabel(savedProfile)}");
     }
 
     private async void PickDriveFolder_Click(object? sender, RoutedEventArgs e)
@@ -321,6 +340,22 @@ public sealed partial class MainWindow : Window
     private async void RestoreDrive_Click(object? sender, RoutedEventArgs e)
     {
         await RunDewDriveAsync("restore", push: false);
+    }
+
+    private void DriveProfilesList_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        int index = DriveProfilesList.SelectedIndex;
+        DewDriveProfile? profile = index >= 0 ? (settings.DewDrives?.Drives ?? []).ElementAtOrDefault(index) : null;
+        if (profile is null)
+        {
+            return;
+        }
+
+        DriveNameBox.Text = profile.Name;
+        DriveFolderBox.Text = DriveFolder(profile);
+        DriveRegistryImageBox.Text = DriveRegistry(profile);
+        DriveCommitBox.Text = "HEAD";
+        DriveStatusText.Text = DriveLabel(profile);
     }
 
     private void AppendDriveItems(IEnumerable<string> paths)
@@ -459,6 +494,36 @@ public sealed partial class MainWindow : Window
         }
 
         ContainerStatusText.Text = containers.Count == 0 ? "No saved containers." : $"{containers.Count} saved container(s).";
+    }
+
+    private void RefreshDriveList()
+    {
+        settings = settingsService.Load();
+        driveProfiles.Clear();
+        foreach (DewDriveProfile profile in settings.DewDrives?.Drives ?? [])
+        {
+            driveProfiles.Add(DriveLabel(profile));
+        }
+
+        DriveStatusText.Text = driveProfiles.Count == 0 ? "No saved Dew Drive profiles." : $"{driveProfiles.Count} saved Dew Drive profile(s).";
+    }
+
+    private static string DriveFolder(DewDriveProfile profile)
+    {
+        return !string.IsNullOrWhiteSpace(profile.LocalPath) ? profile.LocalPath : profile.Folder;
+    }
+
+    private static string DriveRegistry(DewDriveProfile profile)
+    {
+        return !string.IsNullOrWhiteSpace(profile.RegistryRef) ? profile.RegistryRef : profile.RegistryImage;
+    }
+
+    private static string DriveLabel(DewDriveProfile profile)
+    {
+        string folder = DriveFolder(profile);
+        string registry = DriveRegistry(profile);
+        string label = string.IsNullOrWhiteSpace(folder) ? profile.Name : $"{profile.Name} - {folder}";
+        return string.IsNullOrWhiteSpace(registry) ? label : $"{label} -> {registry}";
     }
 
     private void UpdateSelectionContext()
