@@ -21,6 +21,8 @@ $CreateTasksCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"
 $RemoveTasksCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File `"$EscapedRoot\installer\remove-elevated-tasks.ps1`"' }`""
 $DewDriveAddCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption dew-drive add '%1' }`""
 $DewDriveSyncCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption dew-drive sync --push }`""
+$DockerUploadCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption.gui --docker-upload '%1' }`""
+$DockerSaveHereCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption.gui --docker-save-here '%V' }`""
 
 $keys = @(
     @{ Path = "HKCU:\Software\Classes\*\shell\dew-encryption"; Verb = "dew encryption"; Command = $Command },
@@ -39,7 +41,9 @@ $keys = @(
     @{ Path = "HKCU:\Software\Classes\Directory\Background\shell\dew-encryption-remove-elevated-tasks"; Verb = "dew encryption remove elevated tasks"; Command = $RemoveTasksCommand },
     @{ Path = "HKCU:\Software\Classes\*\shell\dew-encryption-dew-drive-add"; Verb = "dew encryption add to Dew Drive"; Command = $DewDriveAddCommand },
     @{ Path = "HKCU:\Software\Classes\Directory\shell\dew-encryption-dew-drive-add"; Verb = "dew encryption add to Dew Drive"; Command = $DewDriveAddCommand },
-    @{ Path = "HKCU:\Software\Classes\Directory\Background\shell\dew-encryption-dew-drive-sync"; Verb = "dew encryption sync Dew Drive"; Command = $DewDriveSyncCommand }
+    @{ Path = "HKCU:\Software\Classes\Directory\Background\shell\dew-encryption-dew-drive-sync"; Verb = "dew encryption sync Dew Drive"; Command = $DewDriveSyncCommand },
+    @{ Path = "HKCU:\Software\Classes\*\shell\dew-encryption-docker-upload"; Verb = "dew encryption upload to Docker or custom remote"; Command = $DockerUploadCommand },
+    @{ Path = "HKCU:\Software\Classes\Directory\Background\shell\dew-encryption-docker-save-here"; Verb = "dew encryption save Docker image here"; Command = $DockerSaveHereCommand }
 )
 
 foreach ($item in $keys) {
@@ -59,6 +63,8 @@ foreach ($item in $keys) {
         $icon = Join-Path $ProjectRoot "assets\icons\dew-veracrypt-encrypt.ico"
     } elseif ($item.Path -like "*veracrypt-decrypt") {
         $icon = Join-Path $ProjectRoot "assets\icons\dew-veracrypt-decrypt.ico"
+    } elseif ($item.Path -like "*docker*") {
+        $icon = Join-Path $ProjectRoot "assets\icons\dew-archive.ico"
     } elseif ($item.Path -like "*dew-encryption") {
         $icon = Join-Path $ProjectRoot "assets\icons\dew-archive.ico"
     }

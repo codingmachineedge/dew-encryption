@@ -32,6 +32,10 @@ from .core import (
     dew_drive_pull,
     dew_drive_restore,
     dew_drive_sync,
+    docker_list_assets,
+    docker_push_archive,
+    docker_save_asset,
+    run_custom_remote_upload,
 )
 
 
@@ -498,6 +502,105 @@ class DewFileManager(tk.Tk):
         for message in run_container_hooks(profile, event, container, mount_path):
             self._log(message)
 
+    def open_docker_upload_dialog(self, source: Path | None = None) -> None:
+        source = (source or self._active_source() or Path()).expanduser().resolve()
+        if not source or not source.exists() or source.is_dir():
+            messagebox.showinfo("Docker Upload", "Choose a Docker archive/container file first.")
+            return
+        dialog = tk.Toplevel(self)
+        dialog.title("Upload to Docker or Custom Remote")
+        dialog.columnconfigure(1, weight=1)
+        ttk.Label(dialog, text=f"File: {source}").grid(row=0, column=0, columnspan=3, sticky="ew", padx=10, pady=(10, 6))
+        mode = tk.StringVar(value="docker")
+        image_ref = tk.StringVar(value="")
+        source_ref = tk.StringVar(value="")
+        command = tk.StringVar(value="")
+        ttk.Radiobutton(dialog, text="Docker registry", variable=mode, value="docker").grid(row=1, column=0, sticky="w", padx=10)
+        ttk.Radiobutton(dialog, text="Custom remote command", variable=mode, value="custom").grid(row=1, column=1, sticky="w", padx=10)
+        ttk.Label(dialog, text="Target image/ref").grid(row=2, column=0, sticky="w", padx=10, pady=4)
+        ttk.Entry(dialog, textvariable=image_ref).grid(row=2, column=1, columnspan=2, sticky="ew", padx=10, pady=4)
+        ttk.Label(dialog, text="Source image/ref (optional)").grid(row=3, column=0, sticky="w", padx=10, pady=4)
+        ttk.Entry(dialog, textvariable=source_ref).grid(row=3, column=1, columnspan=2, sticky="ew", padx=10, pady=4)
+        ttk.Label(dialog, text="Custom command ({file})").grid(row=4, column=0, sticky="w", padx=10, pady=4)
+        ttk.Entry(dialog, textvariable=command).grid(row=4, column=1, columnspan=2, sticky="ew", padx=10, pady=4)
+        ttk.Label(dialog, text="Docker mode loads the archive if no source image/ref is supplied, tags it, then pushes it.").grid(row=5, column=0, columnspan=3, sticky="ew", padx=10, pady=4)
+
+        def run_upload() -> None:
+            dialog.destroy()
+            threading.Thread(target=self._docker_upload_worker, args=(source, mode.get(), image_ref.get(), source_ref.get(), command.get()), daemon=True).start()
+
+        ttk.Button(dialog, text="Upload", command=run_upload).grid(row=6, column=1, sticky="e", padx=10, pady=10)
+        ttk.Button(dialog, text="Cancel", command=dialog.destroy).grid(row=6, column=2, sticky="e", padx=10, pady=10)
+
+    def _docker_upload_worker(self, source: Path, mode: str, image_ref: str, source_ref: str, command: str) -> None:
+        try:
+            if mode == "docker":
+                output = docker_push_archive(source, image_ref, loaded_ref=source_ref)
+            else:
+                output = run_custom_remote_upload(source, command)
+            self.events.put(f"Docker/custom remote upload completed for {source}.\n{output}\n")
+        except DewError as exc:
+            self.events.put(f"Docker/custom remote upload failed: {exc}\n")
+
+    def open_docker_save_dialog(self, output_dir: Path | None = None) -> None:
+        output_dir = (output_dir or self._active_source() or Path.cwd()).expanduser().resolve()
+        if output_dir.is_file():
+            output_dir = output_dir.parent
+        try:
+            assets = docker_list_assets()
+        except DewError as exc:
+            messagebox.showerror("Save Docker Image Here", f"Unable to list Docker assets: {exc}")
+            return
+        dialog = tk.Toplevel(self)
+        dialog.title("Save Docker Images, Containers, or Volumes Here")
+        dialog.geometry("760x420")
+        dialog.columnconfigure(0, weight=1)
+        dialog.rowconfigure(1, weight=1)
+        ttk.Label(dialog, text=f"Save selected Docker assets to: {output_dir}").grid(row=0, column=0, sticky="ew", padx=10, pady=8)
+        tree = ttk.Treeview(dialog, columns=("save", "kind", "name", "id"), show="headings", selectmode="extended")
+        for col, title, width in (("save", "Save", 60), ("kind", "Type", 100), ("name", "Name", 300), ("id", "Identifier", 260)):
+            tree.heading(col, text=title)
+            tree.column(col, width=width)
+        tree.grid(row=1, column=0, sticky="nsew", padx=10)
+        selected: set[int] = set()
+        for idx, asset in enumerate(assets):
+            tree.insert("", "end", iid=str(idx), values=("", asset.kind, asset.name, asset.identifier))
+
+        def toggle(_event: object | None = None) -> None:
+            for item in tree.selection():
+                idx = int(item)
+                if idx in selected:
+                    selected.remove(idx)
+                    mark = ""
+                else:
+                    selected.add(idx)
+                    mark = "✓"
+                tree.set(item, "save", mark)
+
+        tree.bind("<Double-1>", toggle)
+        tree.bind("<space>", toggle)
+
+        def save_selected() -> None:
+            chosen = [assets[idx] for idx in sorted(selected)]
+            if not chosen:
+                messagebox.showinfo("Save Docker Image Here", "Select one or more Docker assets first.")
+                return
+            dialog.destroy()
+            threading.Thread(target=self._docker_save_worker, args=(chosen, output_dir), daemon=True).start()
+
+        buttons = ttk.Frame(dialog)
+        buttons.grid(row=2, column=0, sticky="ew", padx=10, pady=10)
+        ttk.Button(buttons, text="Toggle Selected", command=toggle).pack(side="left")
+        ttk.Button(buttons, text="Save Here", command=save_selected).pack(side="right")
+        ttk.Button(buttons, text="Cancel", command=dialog.destroy).pack(side="right", padx=(0, 8))
+
+    def _docker_save_worker(self, assets: list[object], output_dir: Path) -> None:
+        try:
+            outputs = [docker_save_asset(asset, output_dir) for asset in assets]
+            self.events.put("Saved Docker assets:\n" + "\n".join(str(path) for path in outputs) + "\n")
+        except DewError as exc:
+            self.events.put(f"Save Docker assets failed: {exc}\n")
+
     def add_files(self) -> None:
         for item in filedialog.askopenfilenames(title="Select files"):
             self._add(Path(item))
@@ -708,9 +811,18 @@ class DewFileManager(tk.Tk):
 
 
 def main() -> None:
-    open_history = "--history" in sys.argv[1:]
-    paths = [Path(arg) for arg in sys.argv[1:] if arg != "--history"]
+    args = sys.argv[1:]
+    open_history = "--history" in args
+    upload_path = Path(args[args.index("--docker-upload") + 1]) if "--docker-upload" in args and args.index("--docker-upload") + 1 < len(args) else None
+    save_dir = Path(args[args.index("--docker-save-here") + 1]) if "--docker-save-here" in args and args.index("--docker-save-here") + 1 < len(args) else None
+    skip = {"--history", "--docker-upload", "--docker-save-here"}
+    values_to_skip = {str(upload_path), str(save_dir)}
+    paths = [Path(arg) for arg in args if arg not in skip and arg not in values_to_skip]
     app = DewFileManager(paths, open_history=open_history)
+    if upload_path:
+        app.after(100, lambda: app.open_docker_upload_dialog(upload_path))
+    if save_dir:
+        app.after(100, lambda: app.open_docker_save_dialog(save_dir))
     app.mainloop()
 
 

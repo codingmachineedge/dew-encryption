@@ -1208,6 +1208,116 @@ def dew_drive_sync(
             run([str(docker), "push", image])
         return DewDriveSyncResult(profile, source, image, build_context, build_context / "dew-drive" / payload.name, metadata_path, should_push)
 
+
+
+@dataclass(frozen=True)
+class DockerAsset:
+    kind: str
+    identifier: str
+    name: str
+
+
+def docker_list_images() -> list[DockerAsset]:
+    raw = docker_run(["image", "ls", "--format", "{{.Repository}}:{{.Tag}}\t{{.ID}}"] )
+    assets: list[DockerAsset] = []
+    for line in raw.splitlines():
+        parts = line.split("\t", 1)
+        if len(parts) != 2:
+            continue
+        ref, image_id = parts
+        name = image_id if ref.startswith("<none>:") else ref
+        assets.append(DockerAsset("image", name, name))
+    return assets
+
+
+def docker_list_containers() -> list[DockerAsset]:
+    raw = docker_run(["ps", "-a", "--format", "{{.ID}}\t{{.Names}}"] )
+    assets: list[DockerAsset] = []
+    for line in raw.splitlines():
+        parts = line.split("\t", 1)
+        if len(parts) == 2:
+            assets.append(DockerAsset("container", parts[0], parts[1] or parts[0]))
+    return assets
+
+
+def docker_list_volumes() -> list[DockerAsset]:
+    raw = docker_run(["volume", "ls", "--format", "{{.Name}}"] )
+    return [DockerAsset("volume", line.strip(), line.strip()) for line in raw.splitlines() if line.strip()]
+
+
+def docker_list_assets() -> list[DockerAsset]:
+    return [*docker_list_images(), *docker_list_containers(), *docker_list_volumes()]
+
+
+def safe_docker_filename(asset: DockerAsset) -> str:
+    safe = "".join(ch if ch.isalnum() or ch in ".-_" else "_" for ch in asset.name).strip("._")
+    return safe or asset.identifier.replace(":", "_")
+
+
+def docker_save_asset(asset: DockerAsset, output_dir: Path) -> Path:
+    output_dir = output_dir.expanduser().resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    base = safe_docker_filename(asset)
+    if asset.kind == "image":
+        target = output_dir / f"docker-image-{base}.tar"
+        docker_run(["image", "save", "-o", str(target), asset.identifier])
+        return target
+    if asset.kind == "container":
+        target = output_dir / f"docker-container-{base}.tar"
+        docker_run(["export", "-o", str(target), asset.identifier])
+        return target
+    if asset.kind == "volume":
+        target = output_dir / f"docker-volume-{base}.tar.gz"
+        mount = f"{asset.identifier}:/volume:ro"
+        docker_run(["run", "--rm", "-v", mount, "-v", f"{output_dir}:/backup", "alpine", "sh", "-c", f"tar -czf /backup/{target.name} -C /volume ."])
+        return target
+    raise DewError(f"Unsupported Docker asset kind: {asset.kind}")
+
+
+def docker_load_archive(archive: Path) -> str:
+    archive = archive.expanduser().resolve()
+    if not archive.exists():
+        raise DewError(f"Docker archive does not exist: {archive}")
+    return docker_run(["load", "-i", str(archive)])
+
+
+def docker_push_archive(archive: Path, image_ref: str, loaded_ref: str = "") -> str:
+    image_ref = image_ref.strip()
+    if not image_ref:
+        raise DewError("Docker image reference is required.")
+    messages: list[str] = []
+    source_ref = loaded_ref.strip()
+    if not source_ref:
+        load_output = docker_load_archive(archive)
+        messages.append(load_output)
+        for line in load_output.splitlines():
+            if line.startswith("Loaded image: "):
+                source_ref = line.removeprefix("Loaded image: ").strip()
+                break
+            if line.startswith("Loaded image ID: "):
+                source_ref = line.removeprefix("Loaded image ID: ").strip()
+                break
+    if not source_ref:
+        raise DewError("Could not determine the loaded Docker image reference. Enter a source image/ref manually.")
+    if source_ref != image_ref:
+        docker_run(["tag", source_ref, image_ref])
+    messages.append(docker_run(["push", image_ref]))
+    return "\n".join(message for message in messages if message)
+
+
+def run_custom_remote_upload(source: Path, command_template: str) -> str:
+    source = source.expanduser().resolve()
+    if not source.exists():
+        raise DewError(f"Upload source does not exist: {source}")
+    if not command_template.strip():
+        raise DewError("Custom remote command is required.")
+    command = command_template.replace("{file}", str(source)).replace("{path}", str(source))
+    proc = subprocess.run(command, shell=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=False)
+    if proc.returncode != 0:
+        raise DewError(f"Custom remote upload failed ({proc.returncode}): {command}\n{proc.stdout}")
+    return proc.stdout.strip()
+
+
 def watch(paths: list[Path], interval: float = 5.0, once: bool = False) -> None:
     last_commit = ""
     while True:

@@ -167,6 +167,12 @@ Folders also get file-history actions in the normal Explorer menu:
 
 These entries are installed without administrator rights and do not require holding Shift.
 
+
+Docker files and folders also get Docker transfer actions:
+
+- Right-click a Docker archive/container file and choose `dew encryption upload to Docker or custom remote` to open a GUI that can load/tag/push the archive to a Docker registry or run a custom upload command with `{file}` replaced by the selected path.
+- Right-click inside a directory and choose `dew encryption save Docker image here` to open a GUI that lists current Docker images, containers, and volumes and saves the selected items into that directory as Docker export/archive files.
+
 Files and folders also get VeraCrypt container actions:
 
 - `dew encryption quick create container` creates a `.dew.hc` VeraCrypt container from the selected file or folder and automatically registers it in the GUI container manager.
