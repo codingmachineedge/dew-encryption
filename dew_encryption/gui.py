@@ -11,6 +11,7 @@ from tkinter import filedialog, messagebox, ttk
 
 from .core import (
     ContainerProfile,
+    DewDriveProfile,
     DewError,
     HookAction,
     ThemeSettings,
@@ -27,6 +28,10 @@ from .core import (
     snapshot_container,
     save_settings,
     snapshot,
+    dew_drive_add,
+    dew_drive_pull,
+    dew_drive_restore,
+    dew_drive_sync,
 )
 
 
@@ -44,6 +49,7 @@ class DewFileManager(tk.Tk):
         self.setting_vars: dict[str, tk.Variable] = {}
         self.container_vars: dict[str, tk.Variable] = {}
         self.hook_vars: dict[str, tk.Variable] = {}
+        self.drive_vars: dict[str, tk.Variable] = {}
         self._build()
         for path in initial_paths or []:
             self._add(path)
@@ -149,6 +155,163 @@ class DewFileManager(tk.Tk):
         self.container_tab = ttk.Frame(self.notebook, padding=10)
         self.notebook.add(self.container_tab, text="Containers")
         self._build_container_manager()
+
+        self.drive_tab = ttk.Frame(self.notebook, padding=10)
+        self.notebook.add(self.drive_tab, text="Dew Drive")
+        self._build_dew_drive()
+
+
+    def _build_dew_drive(self) -> None:
+        tab = self.drive_tab
+        tab.columnconfigure(0, weight=1)
+        tab.columnconfigure(1, weight=2)
+        tab.rowconfigure(1, weight=1)
+        ttk.Label(tab, text="Dew Drive keeps an encrypted, syncable drive folder with profile settings for registry images, encryption mode, and file patterns.").grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+
+        left = ttk.LabelFrame(tab, text="Drive profiles list")
+        left.grid(row=1, column=0, sticky="nsew", padx=(0, 10))
+        left.columnconfigure(0, weight=1)
+        left.rowconfigure(0, weight=1)
+        self.drive_tree = ttk.Treeview(left, columns=("name", "folder"), show="headings", height=10)
+        self.drive_tree.heading("name", text="Drive")
+        self.drive_tree.heading("folder", text="Local folder")
+        self.drive_tree.column("name", width=150)
+        self.drive_tree.column("folder", width=320)
+        self.drive_tree.grid(row=0, column=0, sticky="nsew")
+        self.drive_tree.bind("<<TreeviewSelect>>", self.load_drive_profile)
+
+        editor = ttk.Frame(tab)
+        editor.grid(row=1, column=1, sticky="nsew")
+        editor.columnconfigure(1, weight=1)
+        fields = [
+            ("Drive name", "name"),
+            ("Local drive folder picker", "folder"),
+            ("Registry image field", "registry_image"),
+            ("Include patterns", "include_patterns"),
+            ("Exclude patterns", "exclude_patterns"),
+        ]
+        for row, (label, key) in enumerate(fields):
+            ttk.Label(editor, text=label).grid(row=row, column=0, sticky="w", pady=4)
+            var = tk.StringVar()
+            self.drive_vars[key] = var
+            ttk.Entry(editor, textvariable=var).grid(row=row, column=1, sticky="ew", pady=4, padx=(8, 0))
+        ttk.Button(editor, text="Browse", command=self.pick_drive_folder).grid(row=1, column=2, padx=(8, 0))
+        ttk.Label(editor, text="Encryption mode selector").grid(row=len(fields), column=0, sticky="w", pady=4)
+        self.drive_vars["encryption_mode"] = tk.StringVar(value="standard")
+        ttk.Combobox(editor, textvariable=self.drive_vars["encryption_mode"], values=("standard", "password", "veracrypt"), state="readonly").grid(row=len(fields), column=1, sticky="ew", pady=4, padx=(8, 0))
+
+        buttons = ttk.LabelFrame(editor, text="Add files/folders to drive, sync encrypted drive, and pull/restore drive")
+        buttons.grid(row=len(fields) + 1, column=0, columnspan=3, sticky="ew", pady=(12, 0))
+        for text, command in [
+            ("New Drive", self.new_drive_profile),
+            ("Add Files", self.add_drive_files),
+            ("Add Folder", self.add_drive_folder),
+            ("Sync", lambda: self.sync_drive(False)),
+            ("Sync + Push", lambda: self.sync_drive(True)),
+            ("Pull", self.pull_drive),
+            ("Restore", self.restore_drive),
+        ]:
+            ttk.Button(buttons, text=text, command=command).pack(side="left", padx=(0, 6), pady=8)
+        self.refresh_drive_profiles()
+
+    def refresh_drive_profiles(self) -> None:
+        for item in self.drive_tree.get_children():
+            self.drive_tree.delete(item)
+        for idx, profile in enumerate(self.settings.dew_drives or []):
+            self.drive_tree.insert("", "end", iid=str(idx), values=(profile.name, profile.folder))
+
+    def new_drive_profile(self) -> None:
+        for var in self.drive_vars.values():
+            var.set("")
+        self.drive_vars["name"].set("New Drive")
+        self.drive_vars["include_patterns"].set("**/*")
+        self.drive_vars["encryption_mode"].set("standard")
+        self.save_drive_profile()
+
+    def load_drive_profile(self, _event: object | None = None) -> None:
+        selected = self.drive_tree.selection()
+        if not selected:
+            return
+        profile = (self.settings.dew_drives or [])[int(selected[0])]
+        for key in self.drive_vars:
+            self.drive_vars[key].set(getattr(profile, key, ""))
+
+    def save_drive_profile(self) -> DewDriveProfile:
+        profile = DewDriveProfile(**{key: str(var.get()) for key, var in self.drive_vars.items()})
+        self.settings.dew_drives = self.settings.dew_drives or []
+        selected = self.drive_tree.selection()
+        if selected:
+            self.settings.dew_drives[int(selected[0])] = profile
+        else:
+            self.settings.dew_drives.append(profile)
+        save_settings(self.settings)
+        self.refresh_drive_profiles()
+        return profile
+
+    def pick_drive_folder(self) -> None:
+        folder = filedialog.askdirectory(title="Select local Dew Drive folder")
+        if folder:
+            self.drive_vars["folder"].set(folder)
+            self.save_drive_profile()
+
+    def _drive_profile_for_action(self) -> DewDriveProfile | None:
+        profile = self.save_drive_profile()
+        if not profile.folder:
+            messagebox.showinfo("Dew Drive", "Choose a local drive folder first.")
+            return None
+        return profile
+
+    def add_drive_files(self) -> None:
+        profile = self._drive_profile_for_action()
+        if not profile:
+            return
+        paths = [Path(item) for item in filedialog.askopenfilenames(title="Add files to Dew Drive")]
+        if paths:
+            for target in dew_drive_add(Path(profile.folder), paths):
+                self._log(f"Added to Dew Drive: {target}")
+
+    def add_drive_folder(self) -> None:
+        profile = self._drive_profile_for_action()
+        if not profile:
+            return
+        folder = filedialog.askdirectory(title="Add folder to Dew Drive")
+        if folder:
+            for target in dew_drive_add(Path(profile.folder), [Path(folder)]):
+                self._log(f"Added to Dew Drive: {target}")
+
+    def sync_drive(self, push: bool) -> None:
+        profile = self._drive_profile_for_action()
+        if not profile:
+            return
+        threading.Thread(target=self._drive_sync_worker, args=(profile, push), daemon=True).start()
+
+    def _drive_sync_worker(self, profile: DewDriveProfile, push: bool) -> None:
+        try:
+            result = dew_drive_sync(Path(profile.folder), profile.registry_image, push=push)
+            self.events.put(f"Dew Drive synced: {result.commit}\nRepo: {result.repo}\n")
+        except (DewError, subprocess.CalledProcessError) as exc:
+            self.events.put(f"Dew Drive sync failed: {exc}\n")
+
+    def pull_drive(self) -> None:
+        profile = self._drive_profile_for_action()
+        if not profile:
+            return
+        try:
+            dew_drive_pull(Path(profile.folder), profile.registry_image)
+            self._log("Dew Drive pulled.")
+        except (DewError, subprocess.CalledProcessError) as exc:
+            messagebox.showerror("Dew Drive", f"Pull failed: {exc}")
+
+    def restore_drive(self) -> None:
+        profile = self._drive_profile_for_action()
+        if not profile:
+            return
+        commit = "HEAD"
+        try:
+            dew_drive_restore(Path(profile.folder), commit)
+            self._log(f"Dew Drive restored to {commit}.")
+        except DewError as exc:
+            messagebox.showerror("Dew Drive", f"Restore failed: {exc}")
 
     def _build_container_manager(self) -> None:
         tab = self.container_tab

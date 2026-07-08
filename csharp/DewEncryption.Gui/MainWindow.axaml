@@ -73,6 +73,42 @@
           </Grid>
         </Grid>
       </TabItem>
+
+
+      <TabItem Header="Dew Drive">
+        <Grid ColumnDefinitions="320,*" RowDefinitions="Auto,*" ColumnSpacing="12" RowSpacing="10" Margin="0,10,0,0">
+          <TextBlock Grid.ColumnSpan="2" Text="Dew Drive profiles sync an encrypted local drive folder with registry image settings, encryption mode, include/exclude patterns, add-file actions, pull, and restore workflows." TextWrapping="Wrap" />
+          <ListBox x:Name="DriveProfilesList" Grid.Row="1" />
+          <Grid Grid.Row="1" Grid.Column="1" RowDefinitions="Auto,Auto,Auto,Auto,*" RowSpacing="10">
+            <UniformGrid Columns="2" Rows="3">
+              <TextBox Watermark="Drive profile name" x:Name="DriveNameBox" />
+              <TextBox Watermark="Registry image" x:Name="DriveRegistryImageBox" />
+              <TextBox Watermark="Local drive folder" x:Name="DriveFolderBox" />
+              <ComboBox x:Name="DriveEncryptionModeBox" SelectedIndex="0">
+                <ComboBoxItem Content="standard" />
+                <ComboBoxItem Content="password" />
+                <ComboBoxItem Content="veracrypt" />
+              </ComboBox>
+              <TextBox Watermark="Include patterns" x:Name="DriveIncludePatternsBox" Text="**/*" />
+              <TextBox Watermark="Exclude patterns" x:Name="DriveExcludePatternsBox" />
+            </UniformGrid>
+            <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8">
+              <Button Content="New Drive" Click="NewDrive_Click" />
+              <Button Content="Pick Folder" Click="PickDriveFolder_Click" />
+              <Button Content="Add Files" Click="AddDriveFiles_Click" />
+              <Button Content="Add Folder" Click="AddDriveFolder_Click" />
+            </StackPanel>
+            <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="8">
+              <Button Content="Sync" Click="SyncDrive_Click" />
+              <Button Content="Sync + Push" Click="SyncPushDrive_Click" />
+              <Button Content="Pull" Click="PullDrive_Click" />
+              <Button Content="Restore" Click="RestoreDrive_Click" />
+            </StackPanel>
+            <TextBox Grid.Row="3" x:Name="DriveItemsBox" Height="90" AcceptsReturn="True" Watermark="Add files/folders to drive list" TextWrapping="Wrap" />
+            <TextBlock Grid.Row="4" TextWrapping="Wrap" Text="Sync, Pull, and Restore shell out to dew-encryption dew-drive sync/pull/restore. Add Files and Add Folder stage selected paths in this GUI so they can be copied or handled by the CLI workflow." />
+          </Grid>
+        </Grid>
+      </TabItem>
     </TabControl>
   </Grid>
 </Window>

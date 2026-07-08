@@ -134,7 +134,9 @@ class ContainerProfile:
 class DewDriveProfile:
     name: str = "Default"
     local_path: str = ""
+    folder: str = ""
     registry_ref: str = ""
+    registry_image: str = ""
     encryption_mode: str = "7zip"
     last_sync: str = ""
     auto_push: bool = False
@@ -147,6 +149,21 @@ class DewDriveSettings:
     docker_path: str = ""
     default_registry: str = ""
     drives: list[DewDriveProfile] = field(default_factory=list)
+
+    def __iter__(self):
+        return iter(self.drives)
+
+    def __len__(self) -> int:
+        return len(self.drives)
+
+    def __getitem__(self, index: int) -> DewDriveProfile:
+        return self.drives[index]
+
+    def __setitem__(self, index: int, value: DewDriveProfile) -> None:
+        self.drives[index] = value
+
+    def append(self, value: DewDriveProfile) -> None:
+        self.drives.append(value)
 
 
 @dataclass
@@ -161,6 +178,8 @@ def default_settings() -> AppSettings:
 
 
 def _string_list(value: object) -> list[str]:
+    if isinstance(value, str):
+        return [item.strip() for item in value.replace("\n", ",").split(",") if item.strip()]
     if not isinstance(value, list):
         return []
     return [str(item) for item in value]
@@ -976,8 +995,16 @@ def app_version() -> str:
     return __version__
 
 
+def dew_drive_profiles(settings: AppSettings | None = None) -> list[DewDriveProfile]:
+    settings = settings or load_settings()
+    dew_drives = settings.dew_drives
+    if isinstance(dew_drives, DewDriveSettings):
+        return dew_drives.drives
+    return []
+
+
 def find_dew_drive_profile(name: str) -> DewDriveProfile:
-    for profile in load_settings().dew_drive or []:
+    for profile in dew_drive_profiles():
         if profile.name == name:
             return profile
     raise DewError(f"Dew Drive profile not found: {name}")
@@ -1086,12 +1113,68 @@ def assert_no_plaintext_in_build_context(build_context: Path) -> None:
             raise DewError(f"Unexpected plaintext candidate in Docker build context: {path}")
 
 
-def dew_drive_sync(name: str, push: bool = False, registry: str | None = None, password: str | None = None) -> DewDriveSyncResult:
+def dew_drive_add(folder: Path, sources: list[Path]) -> list[Path]:
+    folder = folder.expanduser().resolve()
+    folder.mkdir(parents=True, exist_ok=True)
+    copied: list[Path] = []
+    for source in sources:
+        source = source.expanduser().resolve()
+        target = folder / source.name
+        if source.is_dir():
+            if target.exists():
+                shutil.rmtree(target)
+            shutil.copytree(source, target)
+        elif source.is_file():
+            shutil.copy2(source, target)
+        else:
+            raise DewError(f"Drive source does not exist: {source}")
+        copied.append(target)
+    return copied
+
+
+def dew_drive_sync_folder(folder: Path, registry_image: str = "", push: bool = False) -> DewResult:
+    folder = folder.expanduser().resolve()
+    if not folder.exists():
+        raise DewError(f"Dew Drive folder does not exist: {folder}")
+    result = snapshot([folder])
+    if push and registry_image:
+        subprocess.run(["git", "-C", str(result.repo), "push", registry_image, "HEAD"], check=True)
+    return result
+
+
+def dew_drive_pull(folder: Path, registry_image: str = "") -> None:
+    folder = folder.expanduser().resolve()
+    repo = repo_for_source(folder)
+    if registry_image:
+        subprocess.run(["git", "-C", str(repo), "pull", registry_image, "HEAD"], check=True)
+    else:
+        subprocess.run(["git", "-C", str(repo), "pull"], check=True)
+
+
+def dew_drive_restore(folder: Path, commit: str = "HEAD") -> None:
+    folder = folder.expanduser().resolve()
+    restore_commit(repo_for_source(folder), commit, folder)
+
+
+def dew_drive_sync(
+    name_or_folder: str | Path,
+    registry_or_push: str | bool = False,
+    push: bool = False,
+    registry: str | None = None,
+    password: str | None = None,
+) -> DewDriveSyncResult | DewResult:
+    if isinstance(name_or_folder, Path):
+        registry_image = registry_or_push if isinstance(registry_or_push, str) else ""
+        return dew_drive_sync_folder(name_or_folder, registry_image, push=push)
+
+    name = name_or_folder
+    profile_push = bool(registry_or_push) if isinstance(registry_or_push, bool) else push
     profile = find_dew_drive_profile(name)
-    source = Path(profile.local_path).expanduser().resolve()
-    if not profile.local_path or not source.exists():
+    local_path = profile.local_path or profile.folder
+    source = Path(local_path).expanduser().resolve()
+    if not local_path or not source.exists():
         raise DewError(f"Dew Drive local path does not exist for {name}: {source}")
-    image = registry or profile.registry or f"dew-drive-{profile.name.lower().replace(' ', '-')}:latest"
+    image = registry or profile.registry_ref or profile.registry_image or f"dew-drive-{profile.name.lower().replace(' ', '-')}:latest"
     password = password or os.environ.get("DEW_DRIVE_PASSWORD")
     if not password:
         password = getpass.getpass("Dew Drive encryption password: ")
@@ -1120,7 +1203,7 @@ def dew_drive_sync(name: str, push: bool = False, registry: str | None = None, p
         assert_no_plaintext_in_build_context(build_context)
         docker = find_executable("docker")
         run([str(docker), "build", "-t", image, str(build_context)])
-        should_push = push or profile.auto_push
+        should_push = profile_push or profile.auto_push
         if should_push:
             run([str(docker), "push", image])
         return DewDriveSyncResult(profile, source, image, build_context, build_context / "dew-drive" / payload.name, metadata_path, should_push)
