@@ -1208,6 +1208,80 @@ def dew_drive_sync(
             run([str(docker), "push", image])
         return DewDriveSyncResult(profile, source, image, build_context, build_context / "dew-drive" / payload.name, metadata_path, should_push)
 
+
+def find_containing_git_repo(path: Path) -> Path | None:
+    git = find_executable("git")
+    target = path.expanduser().resolve()
+    cwd = target if target.is_dir() else target.parent
+    if not cwd.exists():
+        raise DewError(f"Path does not exist: {path}")
+    try:
+        top = run([str(git), "rev-parse", "--show-toplevel"], cwd=cwd)
+    except DewError:
+        return None
+    return Path(top).resolve()
+
+
+def opencode_commit_message(repo: Path, git: Path) -> str:
+    fallback = "dew"
+    opencode = shutil.which("opencode")
+    if not opencode:
+        return fallback
+    try:
+        status = run([str(git), "status", "--short"], cwd=repo)
+        diff = run([str(git), "diff", "--cached", "--stat"], cwd=repo)
+    except DewError:
+        return fallback
+    prompt = (
+        "Generate one concise git commit message subject line. "
+        "Return only the subject, with no quotes, markdown, or explanation.\n\n"
+        f"Repository status:\n{status[:4000]}\n\nStaged diff stat:\n{diff[:4000]}"
+    )
+    candidates = [
+        [opencode, "run", prompt],
+        [opencode, "-p", prompt],
+        [opencode, prompt],
+    ]
+    for cmd in candidates:
+        try:
+            proc = subprocess.run(
+                cmd,
+                cwd=str(repo),
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                input="",
+                timeout=45,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            continue
+        if proc.returncode != 0:
+            continue
+        message = proc.stdout.strip().splitlines()[0].strip().strip('"').strip("'")
+        if message:
+            return message[:200]
+    return fallback
+
+
+def commit_and_push_repo(path: Path) -> tuple[Path, str, str]:
+    git = find_executable("git")
+    repo = find_containing_git_repo(path)
+    if repo is None:
+        raise DewError(f"Not inside a Git repository: {path}")
+    run([str(git), "add", "-A"], cwd=repo)
+    status = run([str(git), "status", "--porcelain"], cwd=repo)
+    commit = ""
+    message = ""
+    if status:
+        message = opencode_commit_message(repo, git)
+        run([str(git), "commit", "-m", message], cwd=repo)
+        commit = current_commit(repo, git)
+    else:
+        commit = current_commit(repo, git)
+    run([str(git), "push"], cwd=repo)
+    return repo, commit, message
+
 def watch(paths: list[Path], interval: float = 5.0, once: bool = False) -> None:
     last_commit = ""
     while True:
@@ -1448,6 +1522,22 @@ def main(argv: list[str] | None = None) -> int:
         except DewError as exc:
             print(f"dew encryption failed: {exc}", file=sys.stderr)
             return 1
+        return 0
+
+    if argv and argv[0] == "git-commit-push":
+        parser = argparse.ArgumentParser(prog="dew-encryption git-commit-push", description="Commit and push the containing Git repository.")
+        parser.add_argument("path", help="Explorer path inside the Git repository.")
+        args = parser.parse_args(argv[1:])
+        try:
+            repo, commit, message = commit_and_push_repo(Path(args.path))
+        except DewError as exc:
+            print(f"dew encryption failed: {exc}", file=sys.stderr)
+            return 1
+        print(f"Repo: {repo}")
+        if message:
+            print(f"Commit message: {message}")
+        print(f"Commit: {commit}")
+        print("Pushed: yes")
         return 0
 
     if argv and argv[0] == "watch":

@@ -15,7 +15,9 @@ $keys = @(
     "HKCU:\Software\Classes\Directory\Background\shell\dew-encryption-remove-elevated-tasks",
     "HKCU:\Software\Classes\*\shell\dew-encryption-dew-drive-add",
     "HKCU:\Software\Classes\Directory\shell\dew-encryption-dew-drive-add",
-    "HKCU:\Software\Classes\Directory\Background\shell\dew-encryption-dew-drive-sync"
+    "HKCU:\Software\Classes\Directory\Background\shell\dew-encryption-dew-drive-sync",
+    "HKCU:\Software\Classes\Directory\Background\shell\dew-encryption-git-commit-push",
+    "HKCU:\Software\Classes\Directory\shell\dew-encryption-git-commit-push"
 )
 
 foreach ($key in $keys) {
