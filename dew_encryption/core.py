@@ -15,6 +15,7 @@ import urllib.error
 import urllib.request
 from dataclasses import dataclass
 from dataclasses import asdict
+from dataclasses import field
 from pathlib import Path
 
 
@@ -108,13 +109,39 @@ class ContainerProfile:
 
 
 @dataclass
+class DewDriveProfile:
+    name: str = "Default"
+    local_path: str = ""
+    registry_ref: str = ""
+    encryption_mode: str = "7zip"
+    last_sync: str = ""
+    auto_push: bool = False
+    include_patterns: list[str] = field(default_factory=list)
+    exclude_patterns: list[str] = field(default_factory=list)
+
+
+@dataclass
+class DewDriveSettings:
+    docker_path: str = ""
+    default_registry: str = ""
+    drives: list[DewDriveProfile] = field(default_factory=list)
+
+
+@dataclass
 class AppSettings:
     veracrypt: VeraCryptSettings
     containers: list[ContainerProfile] | None = None
+    dew_drives: DewDriveSettings | None = None
 
 
 def default_settings() -> AppSettings:
-    return AppSettings(veracrypt=VeraCryptSettings(), containers=[])
+    return AppSettings(veracrypt=VeraCryptSettings(), containers=[], dew_drives=DewDriveSettings())
+
+
+def _string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value]
 
 
 def load_settings() -> AppSettings:
@@ -149,7 +176,34 @@ def load_settings() -> AppSettings:
             theme=ThemeSettings(**theme_values),
             hooks=hooks,
         ))
-    return AppSettings(veracrypt=VeraCryptSettings(**values), containers=profiles)
+    dew_drives_raw = raw.get("dew_drives", {}) if isinstance(raw, dict) else {}
+    dew_drive_values = asdict(DewDriveSettings())
+    if isinstance(dew_drives_raw, dict):
+        dew_drive_values.update({
+            key: value
+            for key, value in dew_drives_raw.items()
+            if key in dew_drive_values and key != "drives"
+        })
+    drives: list[DewDriveProfile] = []
+    drives_raw = dew_drives_raw.get("drives", []) if isinstance(dew_drives_raw, dict) else []
+    for drive_raw in drives_raw:
+        if not isinstance(drive_raw, dict):
+            continue
+        drive_values = asdict(DewDriveProfile())
+        drive_values.update({
+            key: value
+            for key, value in drive_raw.items()
+            if key in drive_values and key not in {"include_patterns", "exclude_patterns"}
+        })
+        drive_values["include_patterns"] = _string_list(drive_raw.get("include_patterns", []))
+        drive_values["exclude_patterns"] = _string_list(drive_raw.get("exclude_patterns", []))
+        drives.append(DewDriveProfile(**drive_values))
+    dew_drive_values["drives"] = drives
+    return AppSettings(
+        veracrypt=VeraCryptSettings(**values),
+        containers=profiles,
+        dew_drives=DewDriveSettings(**dew_drive_values),
+    )
 
 
 def save_settings(settings: AppSettings) -> None:
