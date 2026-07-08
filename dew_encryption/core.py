@@ -1214,6 +1214,41 @@ def _safe_repo_name(source: Path) -> str:
     return "".join(ch if ch.isalnum() or ch in "._-" else "-" for ch in source.resolve().name).strip(".-") or "encrypted-source"
 
 
+
+def detect_buildable_source_commands(source: Path) -> tuple[str, str]:
+    """Infer reasonable build and run commands for common repository types."""
+    source = source.expanduser().resolve()
+    if (source / "pyproject.toml").exists() or (source / "setup.py").exists():
+        run_command = "python -m dew_encryption.gui" if (source / "dew_encryption" / "gui.py").exists() else "python -m pip --version"
+        return "python -m pip install -e .", run_command
+    package_json = source / "package.json"
+    if package_json.exists():
+        try:
+            package = json.loads(package_json.read_text(encoding="utf-8"))
+            scripts = package.get("scripts", {}) if isinstance(package, dict) else {}
+        except (OSError, json.JSONDecodeError):
+            scripts = {}
+        build = "npm install"
+        if isinstance(scripts, dict) and "build" in scripts:
+            build = "npm install && npm run build"
+        if isinstance(scripts, dict):
+            for script in ("start", "dev", "serve"):
+                if script in scripts:
+                    return build, f"npm run {script}"
+        return build, "npm start"
+    if any(source.glob("*.sln")):
+        solution = next(source.glob("*.sln"))
+        return f"dotnet build {solution.name}", f"dotnet run --project {solution.name}"
+    if any(source.rglob("*.csproj")):
+        project = next(source.rglob("*.csproj"))
+        rel = project.relative_to(source).as_posix()
+        return f"dotnet build {rel}", f"dotnet run --project {rel}"
+    if (source / "Cargo.toml").exists():
+        return "cargo build", "cargo run"
+    if (source / "Makefile").exists() or (source / "makefile").exists():
+        return "make", "make run"
+    return "", ""
+
 def create_buildable_encrypted_source(
     source: Path,
     output: Path,
@@ -1254,6 +1289,9 @@ def create_buildable_encrypted_source(
             branch = run([str(git), "rev-parse", "--abbrev-ref", "HEAD"], cwd=source) or "main"
         except DewError:
             branch = "main"
+    detected_build, detected_run = detect_buildable_source_commands(source)
+    build_command = build_command or detected_build
+    run_command = run_command or detected_run
 
     with tempfile.TemporaryDirectory(prefix="dew-buildable-source-") as temp_dir:
         temp = Path(temp_dir)
@@ -1361,14 +1399,16 @@ def shell_run(command, log):
     log(run(command, cwd=repo_dir(), shell=True))
 
 
-def build_and_run(password, log):
+def build_and_run(password, build_command, run_command, log):
+    if not run_command:
+        raise RuntimeError("Run command is empty. Enter a command in the manager before starting.")
     first = decrypt_embedded(password, log)
     changed = pull_if_enabled(log)
     if first or changed:
-        shell_run(BUILD_COMMAND, log)
+        shell_run(build_command, log)
     else:
         log("No new version detected; build command was not run.")
-    shell_run(RUN_COMMAND, log)
+    shell_run(run_command, log)
 
 
 class App(tk.Tk):
@@ -1378,6 +1418,15 @@ class App(tk.Tk):
         self.geometry("760x460")
         ttk.Label(self, text=f"Encrypted source: {REPO_NAME}").pack(anchor="w", padx=12, pady=(12, 4))
         ttk.Label(self, text=f"Pull remote: {REMOTE or 'disabled'}").pack(anchor="w", padx=12)
+        form = ttk.Frame(self)
+        form.pack(fill="x", padx=12, pady=8)
+        form.columnconfigure(1, weight=1)
+        self.build_command = tk.StringVar(value=BUILD_COMMAND)
+        self.run_command = tk.StringVar(value=RUN_COMMAND)
+        ttk.Label(form, text="Build command").grid(row=0, column=0, sticky="w", pady=2)
+        ttk.Entry(form, textvariable=self.build_command).grid(row=0, column=1, sticky="ew", padx=(8, 0), pady=2)
+        ttk.Label(form, text="Run command").grid(row=1, column=0, sticky="w", pady=2)
+        ttk.Entry(form, textvariable=self.run_command).grid(row=1, column=1, sticky="ew", padx=(8, 0), pady=2)
         bar = ttk.Frame(self)
         bar.pack(fill="x", padx=12, pady=8)
         ttk.Button(bar, text="Build/Run", command=self.start).pack(side="left")
@@ -1396,7 +1445,7 @@ class App(tk.Tk):
 
         def worker():
             try:
-                build_and_run(password, self.log)
+                build_and_run(password, self.build_command.get().strip(), self.run_command.get().strip(), self.log)
                 self.log("Done.")
             except Exception as exc:
                 self.log(f"ERROR: {exc}")
@@ -1459,8 +1508,8 @@ def main(argv: list[str] | None = None) -> int:
         create_parser.add_argument("--password", help="Encryption password. If omitted, a hidden prompt is shown.")
         create_parser.add_argument("--remote", default="", help="Optional Git remote URL to pull before running.")
         create_parser.add_argument("--branch", default="", help="Remote branch to fast-forward when pull is enabled. Defaults to current branch.")
-        create_parser.add_argument("--build-command", default="", help="Command run after first decrypt or after a successful pull update.")
-        create_parser.add_argument("--run-command", default="", help="Command run every time after any required build step.")
+        create_parser.add_argument("--build-command", default="", help="Command run after first decrypt or after a successful pull update. Auto-detected when omitted where possible.")
+        create_parser.add_argument("--run-command", default="", help="Command run every time after any required build step. Auto-detected when omitted where possible, and editable in the generated GUI.")
         args = parser.parse_args(argv[1:])
         try:
             password = args.password or getpass.getpass("Encrypted source password: ")

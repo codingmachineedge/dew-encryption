@@ -129,7 +129,7 @@ dew-encryption-gui C:\Path\To\Folder --history
 
 ## Buildable Encrypted Source Manager
 
-Create a special buildable encrypted source software file when you want to ship a whole GitHub checkout as one password-protected GUI manager. The generated Python file contains an encrypted 7-Zip copy of the entire Git repo, prompts for the password in its own Tkinter GUI, decrypts into the user's local cache, optionally pulls a remote branch, and then runs the configured build/run commands.
+Create a special buildable encrypted source software file when you want to ship a whole GitHub checkout as one password-protected GUI manager. The generated Python file contains an encrypted 7-Zip copy of the entire Git repo, prompts for the password in its own Tkinter GUI, decrypts into the user's local cache, optionally pulls a remote branch, and then runs the build/run commands. Commands can be supplied explicitly, are auto-detected for common repository types, and remain editable in the generated GUI before launch.
 
 ```powershell
 dew-encryption buildable-source create . .\DewEncryptedSourceManager.py `
@@ -139,6 +139,12 @@ dew-encryption buildable-source create . .\DewEncryptedSourceManager.py `
   --build-command "python -m pip install -e ." `
   --run-command "dew-encryption-gui"
 ```
+
+How it knows how to build and run:
+
+- Prefer explicit `--build-command` and `--run-command` values when you know the project-specific commands.
+- If commands are omitted, Dew Encryption auto-detects common project files: `pyproject.toml`/`setup.py`, `package.json`, `.sln`/`.csproj`, `Cargo.toml`, and `Makefile`.
+- The generated GUI shows the resolved build and run commands in editable fields before launch, so users can correct or customize them without rebuilding the encrypted manager.
 
 When the manager starts:
 
