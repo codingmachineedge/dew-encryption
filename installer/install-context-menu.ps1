@@ -23,6 +23,8 @@ $DewDriveAddCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"
 $DewDriveSyncCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption dew-drive sync --push }`""
 $DockerUploadCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption.gui --docker-upload '%1' }`""
 $DockerSaveHereCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption.gui --docker-save-here '%V' }`""
+$GitCommitPushCommand = "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption git-commit-push '%V'; Read-Host 'Press Enter to close' }`""
+$GitCommitPushFolderCommand = "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption git-commit-push '%1'; Read-Host 'Press Enter to close' }`""
 
 $keys = @(
     @{ Path = "HKCU:\Software\Classes\*\shell\dew-encryption"; Verb = "dew encryption"; Command = $Command },
@@ -43,7 +45,9 @@ $keys = @(
     @{ Path = "HKCU:\Software\Classes\Directory\shell\dew-encryption-dew-drive-add"; Verb = "dew encryption add to Dew Drive"; Command = $DewDriveAddCommand },
     @{ Path = "HKCU:\Software\Classes\Directory\Background\shell\dew-encryption-dew-drive-sync"; Verb = "dew encryption sync Dew Drive"; Command = $DewDriveSyncCommand },
     @{ Path = "HKCU:\Software\Classes\*\shell\dew-encryption-docker-upload"; Verb = "dew encryption upload to Docker or custom remote"; Command = $DockerUploadCommand },
-    @{ Path = "HKCU:\Software\Classes\Directory\Background\shell\dew-encryption-docker-save-here"; Verb = "dew encryption save Docker image here"; Command = $DockerSaveHereCommand }
+    @{ Path = "HKCU:\Software\Classes\Directory\Background\shell\dew-encryption-docker-save-here"; Verb = "dew encryption save Docker image here"; Command = $DockerSaveHereCommand },
+    @{ Path = "HKCU:\Software\Classes\Directory\Background\shell\dew-encryption-git-commit-push"; Verb = "dew encryption commit and push repo"; Command = $GitCommitPushCommand; RepoOnly = $true },
+    @{ Path = "HKCU:\Software\Classes\Directory\shell\dew-encryption-git-commit-push"; Verb = "dew encryption commit and push repo"; Command = $GitCommitPushFolderCommand; RepoOnly = $true }
 )
 
 foreach ($item in $keys) {
@@ -69,7 +73,13 @@ foreach ($item in $keys) {
         $icon = Join-Path $ProjectRoot "assets\icons\dew-archive.ico"
     }
     New-ItemProperty -Path $item.Path -Name "Icon" -Value $icon -PropertyType String -Force | Out-Null
-    New-ItemProperty -Path $item.Path -Name "AppliesTo" -Value "" -PropertyType String -Force | Out-Null
+    if ($item.RepoOnly) {
+        # Registry shell verbs cannot reliably evaluate parent .git folders, so the
+        # command also auto-detects the containing repository and exits if absent.
+        New-ItemProperty -Path $item.Path -Name "AppliesTo" -Value 'System.FileName:".git" OR System.FileName:"*"' -PropertyType String -Force | Out-Null
+    } else {
+        New-ItemProperty -Path $item.Path -Name "AppliesTo" -Value "" -PropertyType String -Force | Out-Null
+    }
     $commandKey = Join-Path $item.Path "command"
     New-Item -Path $commandKey -Force | Out-Null
     Set-Item -Path $commandKey -Value $item.Command
