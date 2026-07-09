@@ -14,7 +14,7 @@ Docs and automation explain the product, validate core flows, build release arti
 ## Automation surfaces
 
 - `.github/workflows/ci.yml`: Windows and Linux tests, compile checks, installer parsing, and smoke tests.
-- `.github/workflows/installer.yml`: per-push Windows installer builds with a SHA-256 checksum.
+- `.github/workflows/installer.yml`: per-push GitHub prereleases containing the Windows installer and its SHA-256 checksum as release assets.
 - `.github/workflows/release.yml`: release artifacts.
 - `.github/workflows/pages.yml`: GitHub Pages deployment from `docs/`.
 

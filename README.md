@@ -72,7 +72,7 @@ Full Windows `.exe` installer:
 .\scripts\build-windows-installer.ps1
 ```
 
-Every branch push runs `.github/workflows/installer.yml` and publishes a commit-specific installer artifact for 30 days. The artifact includes the SHA-named installer and its SHA-256 checksum. The installer uses Inno Setup and installs CLI and GUI executables, Start Menu entries, app icons, and Explorer right-click actions.
+Every branch push runs `.github/workflows/installer.yml`, creates a commit-specific GitHub prerelease, and attaches the SHA-named installer plus its SHA-256 checksum as release assets. The installer uses Inno Setup and installs CLI and GUI executables, Start Menu entries, app icons, and Explorer right-click actions.
 
 Portable Windows build:
 
@@ -199,7 +199,7 @@ The page is deployed by `.github/workflows/pages.yml` from the `docs/` folder.
 ## GitHub Actions
 
 - `.github/workflows/ci.yml` compiles the package, parses installer scripts, installs 7-Zip, and runs a real snapshot smoke test on Windows.
-- `.github/workflows/installer.yml` builds and publishes a commit-specific Windows installer artifact on every branch push.
+- `.github/workflows/installer.yml` builds a Windows installer and publishes it directly as a commit-specific GitHub prerelease asset on every branch push.
 - `.github/workflows/release.yml` builds a zip bundle on tag pushes like `v0.1.0` or manual workflow runs.
 - `.github/workflows/pages.yml` deploys `docs/` to GitHub Pages.
 
