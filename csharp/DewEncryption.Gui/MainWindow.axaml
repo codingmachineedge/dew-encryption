@@ -105,7 +105,7 @@
               <TextBlock Text="Stream Folder" Classes="sectionTitle" />
               <UniformGrid Grid.Row="1" Columns="2" Rows="2">
                 <TextBox Watermark="Drive name" x:Name="DriveNameBox" Margin="0,8,8,8" />
-                <TextBox Watermark="Docker / OCI image" x:Name="DriveRegistryImageBox" Margin="0,8,0,8" />
+                <TextBox Watermark="Upload image tag" x:Name="DriveRegistryImageBox" ToolTip.Tip="Docker/OCI image tag, for example docker.io/your-name/dew-drive:latest. This is the upload target, not a Dockerfile." Margin="0,8,0,8" />
                 <TextBox Watermark="Local stream folder" x:Name="DriveFolderBox" Margin="0,0,8,8" />
                 <TextBox Watermark="Restore commit" x:Name="DriveCommitBox" Text="HEAD" Margin="0,0,0,8" />
               </UniformGrid>
@@ -128,7 +128,10 @@
                 <TextBox x:Name="DriveVcEncryptionBox" Watermark="Algorithm" Text="AES" Margin="0,0,8,8" />
                 <TextBox x:Name="DriveVcHashBox" Watermark="Hash" Text="SHA-512" Margin="0,0,8,8" />
                 <TextBox x:Name="DriveVcFilesystemBox" Watermark="Filesystem" Text="exFAT" Margin="0,0,8,8" />
-                <CheckBox x:Name="DriveAutoPushBox" Content="Auto push" Margin="0,8,0,8" />
+                <StackPanel Orientation="Horizontal" Margin="0,8,0,8">
+                  <CheckBox x:Name="DriveAutoPushBox" Content="Auto push" ToolTip.Tip="Watch this profile when startup auto-sync launches." Margin="0,0,10,0" />
+                  <CheckBox x:Name="DriveStartAtLoginBox" Content="Startup" ToolTip.Tip="Start Dew Drive auto-sync when this Windows user signs in." Click="DriveStartAtLogin_Click" />
+                </StackPanel>
               </UniformGrid>
               <WrapPanel Grid.Row="5" Margin="0,0,0,12">
                 <Button Content="Install VC" Classes="tonal" Click="InstallVeraCrypt_Click" />

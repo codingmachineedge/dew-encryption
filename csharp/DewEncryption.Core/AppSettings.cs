@@ -43,7 +43,8 @@ public sealed record DewDriveProfile(
     string LastSync = "",
     bool AutoPush = false,
     IReadOnlyList<string>? IncludePatterns = null,
-    IReadOnlyList<string>? ExcludePatterns = null);
+    IReadOnlyList<string>? ExcludePatterns = null,
+    string ProtectedPassword = "");
 
 public sealed record DewDriveSettings(
     string DockerPath = "",

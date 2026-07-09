@@ -48,12 +48,15 @@ Name: "{group}\Dew Encryption README"; Filename: "{app}\README.md"
 
 [Tasks]
 Name: "installveracrypt"; Description: "Install VeraCrypt with winget if missing"; GroupDescription: "Dependencies:"
+Name: "startup"; Description: "Start Dew Drive auto-sync at Windows login"; GroupDescription: "Startup:"
 
 [Run]
 Filename: "powershell"; Parameters: "-NoProfile -ExecutionPolicy Bypass -Command ""if (-not (Get-Command VeraCrypt -ErrorAction SilentlyContinue)) {{ winget install -e --id IDRIX.VeraCrypt --accept-source-agreements --accept-package-agreements }}"""; Description: "Install VeraCrypt"; Flags: runhidden; Tasks: installveracrypt
 Filename: "{app}\{#MyAppGuiExeName}"; Description: "Launch Dew Encryption"; Flags: nowait postinstall skipifsilent
 
 [Registry]
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "DewEncryptionDewDrive"; ValueData: """{app}\{#MyAppGuiExeName}"" --auto-sync --minimized"; Flags: uninsdeletevalue; Tasks: startup
+
 Root: HKCU; Subkey: "Software\Classes\*\shell\dew-encryption"; ValueType: string; ValueName: "MUIVerb"; ValueData: "dew encryption"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\*\shell\dew-encryption"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\icons\dew-archive.ico"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\*\shell\dew-encryption\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Flags: uninsdeletekey

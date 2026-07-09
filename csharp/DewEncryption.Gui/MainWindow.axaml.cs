@@ -13,16 +13,27 @@ public sealed partial class MainWindow : Window
     private readonly DewDriveService driveService = new();
     private readonly DewSelectionService selectionService = new();
     private readonly SettingsService settingsService = new();
+    private readonly DewSecretService secretService = new();
+    private readonly DewStartupService startupService = new();
     private readonly ObservableCollection<DewPathItem> selectedPaths = [];
     private readonly ObservableCollection<string> containers = [];
     private readonly ObservableCollection<string> driveProfiles = [];
+    private readonly Dictionary<string, FileSystemWatcher> driveWatchers = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, CancellationTokenSource> driveSyncDebounces = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> driveSyncInProgress = new(StringComparer.OrdinalIgnoreCase);
+    private readonly bool autoSyncOnLaunch;
+    private readonly bool minimizedOnLaunch;
     private AppSettings settings;
-    private FileSystemWatcher? driveWatcher;
-    private CancellationTokenSource? driveSyncDebounce;
-    private bool driveSyncInProgress;
 
     public MainWindow()
+        : this([])
     {
+    }
+
+    public MainWindow(IReadOnlyList<string>? args = null)
+    {
+        autoSyncOnLaunch = args?.Any(arg => string.Equals(arg, "--auto-sync", StringComparison.OrdinalIgnoreCase)) == true;
+        minimizedOnLaunch = args?.Any(arg => string.Equals(arg, "--minimized", StringComparison.OrdinalIgnoreCase)) == true;
         InitializeComponent();
         settings = settingsService.Load();
         FilesGrid.ItemsSource = selectedPaths;
@@ -32,7 +43,28 @@ public sealed partial class MainWindow : Window
         RefreshDriveList();
         LoadVeraCryptSettings();
         UpdateSelectionContext();
+        LoadStartupState();
         Log("Ready.");
+        Opened += MainWindow_Opened;
+    }
+
+    private async void MainWindow_Opened(object? sender, EventArgs e)
+    {
+        if (minimizedOnLaunch)
+        {
+            WindowState = WindowState.Minimized;
+        }
+
+        if (autoSyncOnLaunch)
+        {
+            await StartSavedDriveAutoSyncProfilesAsync();
+        }
+    }
+
+    private void LoadStartupState()
+    {
+        DriveStartAtLoginBox.IsEnabled = startupService.IsSupported;
+        DriveStartAtLoginBox.IsChecked = startupService.IsEnabledForCurrentUser();
     }
 
     private async void AddFiles_Click(object? sender, RoutedEventArgs e)
@@ -253,18 +285,17 @@ public sealed partial class MainWindow : Window
 
     private void NewDrive_Click(object? sender, RoutedEventArgs e)
     {
-        DewDriveProfile savedProfile = ReadDriveProfile();
+        string name = string.IsNullOrWhiteSpace(DriveNameBox.Text) ? "Dew Drive" : DriveNameBox.Text.Trim();
+        string folder = DriveFolderBox.Text?.Trim() ?? string.Empty;
+        List<DewDriveProfile> profiles = (settings.DewDrives?.Drives ?? []).ToList();
+        int existingIndex = FindDriveProfileIndex(profiles, name, folder);
+        DewDriveProfile savedProfile = ReadDriveProfile(existingIndex >= 0 ? profiles[existingIndex] : null);
         if (string.IsNullOrWhiteSpace(DriveFolder(savedProfile)))
         {
             SetStatus("Stream folder required.");
             Log("Choose a local stream folder before saving a Dew Drive profile.");
             return;
         }
-
-        List<DewDriveProfile> profiles = (settings.DewDrives?.Drives ?? []).ToList();
-        int existingIndex = profiles.FindIndex(item =>
-            string.Equals(item.Name, savedProfile.Name, StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(DriveFolder(item), DriveFolder(savedProfile), StringComparison.OrdinalIgnoreCase));
 
         if (existingIndex >= 0)
         {
@@ -370,49 +401,126 @@ public sealed partial class MainWindow : Window
     private async void StartDriveAutoSync_Click(object? sender, RoutedEventArgs e)
     {
         DewDriveProfile profile = SaveDriveProfileFromForm();
+        if (await StartDriveAutoSyncAsync(profile))
+        {
+            DriveAutoPushBox.IsChecked = true;
+            SaveDriveProfileFromForm();
+        }
+    }
+
+    private void StopDriveAutoSync_Click(object? sender, RoutedEventArgs e)
+    {
+        string profileName = string.IsNullOrWhiteSpace(DriveNameBox.Text) ? string.Empty : DriveNameBox.Text.Trim();
+        if (!string.IsNullOrWhiteSpace(profileName) && driveWatchers.ContainsKey(profileName))
+        {
+            StopDriveAutoSync(profileName);
+            SetStatus("Auto sync stopped.");
+            Log($"Auto sync stopped: {profileName}");
+        }
+        else
+        {
+            StopDriveAutoSync();
+            SetStatus("Auto sync stopped.");
+            Log("Auto sync stopped.");
+        }
+    }
+
+    private void DriveStartAtLogin_Click(object? sender, RoutedEventArgs e)
+    {
+        try
+        {
+            if (DriveStartAtLoginBox.IsChecked == true)
+            {
+                startupService.EnableForCurrentUser();
+                SetStatus("Startup enabled.");
+                Log("Dew Drive auto-sync will start when this Windows user signs in.");
+            }
+            else
+            {
+                startupService.DisableForCurrentUser();
+                SetStatus("Startup disabled.");
+                Log("Dew Drive auto-sync startup entry removed.");
+            }
+        }
+        catch (Exception ex)
+        {
+            DriveStartAtLoginBox.IsChecked = startupService.IsEnabledForCurrentUser();
+            SetStatus("Startup update failed.");
+            Log(ex.Message);
+        }
+    }
+
+    private async Task StartSavedDriveAutoSyncProfilesAsync()
+    {
+        settings = settingsService.Load();
+        List<DewDriveProfile> startupProfiles = (settings.DewDrives?.Drives ?? [])
+            .Where(profile => profile.AutoPush)
+            .ToList();
+        if (startupProfiles.Count == 0)
+        {
+            Log("Startup auto-sync found no profiles marked Auto push.");
+            return;
+        }
+
+        int started = 0;
+        foreach (DewDriveProfile profile in startupProfiles)
+        {
+            if (await StartDriveAutoSyncAsync(profile, fromStartup: true))
+            {
+                started++;
+            }
+        }
+
+        SetStatus(started == 0 ? "Startup sync waiting." : $"Startup sync running: {started}");
+    }
+
+    private async Task<bool> StartDriveAutoSyncAsync(DewDriveProfile profile, bool fromStartup = false)
+    {
         string folder = DriveFolder(profile);
         if (string.IsNullOrWhiteSpace(folder))
         {
             SetStatus("Stream folder required.");
-            Log("Choose a local stream folder before starting auto sync.");
-            return;
+            Log($"Choose a local stream folder before starting auto sync for {profile.Name}.");
+            return false;
         }
 
         if (string.IsNullOrWhiteSpace(DriveRegistry(profile)))
         {
-            SetStatus("Docker image required.");
-            Log("Enter a Docker/OCI image before starting auto sync.");
-            return;
+            SetStatus("Upload target required.");
+            Log("Enter an upload image tag like docker.io/your-name/dew-drive:latest.");
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(GetDrivePassword(profile)))
+        {
+            SetStatus("Password required.");
+            Log($"Enter the Dew Drive password once and save {profile.Name} to enable startup sync.");
+            return false;
         }
 
         if (!await EnsureEncryptionReadyAsync(profile.EncryptionMode))
         {
-            return;
+            return false;
         }
 
         Directory.CreateDirectory(folder);
-        StopDriveAutoSync();
-        driveWatcher = new FileSystemWatcher(folder)
+        StopDriveAutoSync(profile.Name);
+        FileSystemWatcher watcher = new(folder)
         {
             IncludeSubdirectories = true,
             NotifyFilter = NotifyFilters.FileName | NotifyFilters.DirectoryName | NotifyFilters.LastWrite | NotifyFilters.Size,
             EnableRaisingEvents = true,
         };
-        driveWatcher.Changed += DriveWatcher_Changed;
-        driveWatcher.Created += DriveWatcher_Changed;
-        driveWatcher.Deleted += DriveWatcher_Changed;
-        driveWatcher.Renamed += DriveWatcher_Changed;
+        watcher.Changed += (_, e) => DriveWatcher_Changed(profile, e);
+        watcher.Created += (_, e) => DriveWatcher_Changed(profile, e);
+        watcher.Deleted += (_, e) => DriveWatcher_Changed(profile, e);
+        watcher.Renamed += (_, e) => DriveWatcher_Changed(profile, e);
+        driveWatchers[profile.Name] = watcher;
 
-        DriveStatusText.Text = $"Auto sync running: {folder}";
+        DriveStatusText.Text = fromStartup ? $"Startup auto sync running: {profile.Name}" : $"Auto sync running: {folder}";
         SetStatus("Auto sync running.");
-        Log($"Auto sync started: {folder}");
-    }
-
-    private void StopDriveAutoSync_Click(object? sender, RoutedEventArgs e)
-    {
-        StopDriveAutoSync();
-        SetStatus("Auto sync stopped.");
-        Log("Auto sync stopped.");
+        Log($"Auto sync started: {profile.Name} -> {DriveRegistry(profile)}");
+        return true;
     }
 
     private void DriveProfilesList_SelectionChanged(object? sender, SelectionChangedEventArgs e)
@@ -429,6 +537,8 @@ public sealed partial class MainWindow : Window
         DriveRegistryImageBox.Text = DriveRegistry(profile);
         SetDriveEncryptionMode(profile.EncryptionMode);
         DriveAutoPushBox.IsChecked = profile.AutoPush;
+        DrivePasswordBox.Text = string.Empty;
+        DrivePasswordBox.Watermark = string.IsNullOrWhiteSpace(profile.ProtectedPassword) ? "Password" : "Password saved on this Windows user";
         DriveCommitBox.Text = "HEAD";
         DriveStatusText.Text = DriveLabel(profile);
     }
@@ -485,20 +595,20 @@ public sealed partial class MainWindow : Window
         }
 
         string registryImage = DriveRegistry(profile);
-        string password = DrivePasswordBox.Text?.Trim() ?? string.Empty;
+        string password = GetDrivePassword(profile);
         if (command == "sync")
         {
             if (push && string.IsNullOrWhiteSpace(registryImage))
             {
-                SetStatus("Docker image required.");
-                Log("Enter a Docker/OCI image before using Sync + Push.");
+                SetStatus("Upload target required.");
+                Log("Enter an upload image tag like docker.io/your-name/dew-drive:latest before using Sync + Push.");
                 return;
             }
 
             if (string.IsNullOrWhiteSpace(password))
             {
                 SetStatus("Password required.");
-                Log("Enter an encryption password before syncing a Dew Drive.");
+                Log("Enter the Dew Drive password once before syncing.");
                 return;
             }
 
@@ -608,11 +718,11 @@ public sealed partial class MainWindow : Window
 
     private DewDriveProfile SaveDriveProfileFromForm()
     {
-        DewDriveProfile profile = ReadDriveProfile();
+        string name = string.IsNullOrWhiteSpace(DriveNameBox.Text) ? "Dew Drive" : DriveNameBox.Text.Trim();
+        string folder = DriveFolderBox.Text?.Trim() ?? string.Empty;
         List<DewDriveProfile> profiles = (settings.DewDrives?.Drives ?? []).ToList();
-        int existingIndex = profiles.FindIndex(item =>
-            string.Equals(item.Name, profile.Name, StringComparison.OrdinalIgnoreCase) ||
-            (!string.IsNullOrWhiteSpace(DriveFolder(profile)) && string.Equals(DriveFolder(item), DriveFolder(profile), StringComparison.OrdinalIgnoreCase)));
+        int existingIndex = FindDriveProfileIndex(profiles, name, folder);
+        DewDriveProfile profile = ReadDriveProfile(existingIndex >= 0 ? profiles[existingIndex] : null);
         if (existingIndex >= 0)
         {
             profiles[existingIndex] = profile;
@@ -629,12 +739,34 @@ public sealed partial class MainWindow : Window
         return profile;
     }
 
-    private DewDriveProfile ReadDriveProfile()
+    private DewDriveProfile ReadDriveProfile(DewDriveProfile? existingProfile = null)
     {
         string name = string.IsNullOrWhiteSpace(DriveNameBox.Text) ? "Dew Drive" : DriveNameBox.Text.Trim();
         string folder = DriveFolderBox.Text?.Trim() ?? string.Empty;
         string registry = DriveRegistryImageBox.Text?.Trim() ?? string.Empty;
         string mode = SelectedDriveMode();
+        string protectedPassword = existingProfile?.ProtectedPassword ?? string.Empty;
+        string password = DrivePasswordBox.Text?.Trim() ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(password))
+        {
+            try
+            {
+                string protectedCandidate = secretService.ProtectForCurrentUser(password);
+                if (string.IsNullOrWhiteSpace(protectedCandidate))
+                {
+                    Log("Password could not be stored for startup on this platform.");
+                }
+                else
+                {
+                    protectedPassword = protectedCandidate;
+                }
+            }
+            catch (Exception ex)
+            {
+                Log($"Password could not be stored for startup: {ex.Message}");
+            }
+        }
+
         return new DewDriveProfile(
             Name: name,
             LocalPath: folder,
@@ -644,7 +776,8 @@ public sealed partial class MainWindow : Window
             EncryptionMode: mode,
             AutoPush: DriveAutoPushBox.IsChecked == true,
             IncludePatterns: [],
-            ExcludePatterns: []);
+            ExcludePatterns: [],
+            ProtectedPassword: protectedPassword);
     }
 
     private string SelectedDriveMode()
@@ -687,6 +820,17 @@ public sealed partial class MainWindow : Window
         Log("VeraCrypt settings saved.");
     }
 
+    private string GetDrivePassword(DewDriveProfile profile)
+    {
+        string password = DrivePasswordBox.Text?.Trim() ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(password))
+        {
+            return password;
+        }
+
+        return secretService.UnprotectForCurrentUser(profile.ProtectedPassword);
+    }
+
     private async Task<bool> EnsureEncryptionReadyAsync(string mode)
     {
         if (!string.Equals(mode, "veracrypt", StringComparison.OrdinalIgnoreCase))
@@ -717,22 +861,29 @@ public sealed partial class MainWindow : Window
         return true;
     }
 
-    private void DriveWatcher_Changed(object sender, FileSystemEventArgs e)
+    private void DriveWatcher_Changed(DewDriveProfile profile, FileSystemEventArgs e)
     {
         if (ShouldIgnoreDrivePath(e.FullPath))
         {
             return;
         }
 
-        driveSyncDebounce?.Cancel();
-        driveSyncDebounce = new CancellationTokenSource();
-        CancellationToken token = driveSyncDebounce.Token;
+        string key = profile.Name;
+        if (driveSyncDebounces.Remove(key, out CancellationTokenSource? previousDebounce))
+        {
+            previousDebounce.Cancel();
+            previousDebounce.Dispose();
+        }
+
+        CancellationTokenSource debounce = new();
+        driveSyncDebounces[key] = debounce;
+        CancellationToken token = debounce.Token;
         _ = Task.Run(async () =>
         {
             try
             {
                 await Task.Delay(TimeSpan.FromSeconds(3), token).ConfigureAwait(false);
-                await Dispatcher.UIThread.InvokeAsync(async () => await RunDriveAutoSyncAsync(), DispatcherPriority.Background);
+                await Dispatcher.UIThread.InvokeAsync(async () => await RunDriveAutoSyncAsync(profile), DispatcherPriority.Background);
             }
             catch (OperationCanceledException)
             {
@@ -740,35 +891,57 @@ public sealed partial class MainWindow : Window
         }, token);
     }
 
-    private async Task RunDriveAutoSyncAsync()
+    private async Task RunDriveAutoSyncAsync(DewDriveProfile profile)
     {
-        if (driveSyncInProgress)
+        string key = profile.Name;
+        if (!driveSyncInProgress.Add(key))
         {
             return;
         }
 
-        driveSyncInProgress = true;
         try
         {
-            Log("Auto sync detected changes.");
-            await RunDewDriveAsync("sync", push: true);
+            Log($"Auto sync detected changes: {profile.Name}");
+            await RunDewDriveProfileSyncAsync(profile, push: true);
         }
         finally
         {
-            driveSyncInProgress = false;
+            driveSyncInProgress.Remove(key);
         }
     }
 
-    private void StopDriveAutoSync()
+    private async Task RunDewDriveProfileSyncAsync(DewDriveProfile profile, bool push)
     {
-        driveSyncDebounce?.Cancel();
-        driveSyncDebounce?.Dispose();
-        driveSyncDebounce = null;
-        if (driveWatcher is not null)
+        string registryImage = DriveRegistry(profile);
+        string password = GetDrivePassword(profile);
+        if (string.IsNullOrWhiteSpace(password))
         {
-            driveWatcher.EnableRaisingEvents = false;
-            driveWatcher.Dispose();
-            driveWatcher = null;
+            SetStatus("Password required.");
+            Log($"Enter the Dew Drive password once and save {profile.Name} to continue auto sync.");
+            return;
+        }
+
+        await RunAndLogAsync(cliService.SyncDewDriveProfileAsync(profile.Name, registryImage, push, password));
+    }
+
+    private void StopDriveAutoSync(string? profileName = null)
+    {
+        IEnumerable<string> names = string.IsNullOrWhiteSpace(profileName)
+            ? driveWatchers.Keys.ToList()
+            : [profileName];
+        foreach (string name in names)
+        {
+            if (driveSyncDebounces.Remove(name, out CancellationTokenSource? debounce))
+            {
+                debounce.Cancel();
+                debounce.Dispose();
+            }
+
+            if (driveWatchers.Remove(name, out FileSystemWatcher? watcher))
+            {
+                watcher.EnableRaisingEvents = false;
+                watcher.Dispose();
+            }
         }
     }
 
@@ -776,6 +949,13 @@ public sealed partial class MainWindow : Window
     {
         return path.Contains(DewPathService.ArchiveDirName, StringComparison.OrdinalIgnoreCase) ||
             path.Contains($"{Path.DirectorySeparatorChar}.git{Path.DirectorySeparatorChar}", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static int FindDriveProfileIndex(IReadOnlyList<DewDriveProfile> profiles, string name, string folder)
+    {
+        return profiles.ToList().FindIndex(item =>
+            string.Equals(item.Name, name, StringComparison.OrdinalIgnoreCase) ||
+            (!string.IsNullOrWhiteSpace(folder) && string.Equals(DriveFolder(item), folder, StringComparison.OrdinalIgnoreCase)));
     }
 
     private static string DriveFolder(DewDriveProfile profile)

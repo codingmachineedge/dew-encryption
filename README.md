@@ -262,12 +262,13 @@ History manager actions:
 The C# GUI `Dew Drive` tab is the OneDrive-style workflow:
 
 1. Pick or create a local stream folder.
-2. Enter a Docker/OCI image such as `ghcr.io/you/dew-drive:latest`.
+2. Enter an upload image tag such as `ghcr.io/you/dew-drive:latest`. This is the Docker/OCI registry target, not a `Dockerfile`.
 3. Choose `veracrypt` encryption and enter the sync password.
 4. Save your VeraCrypt settings or use `Install VeraCrypt`.
-5. Use `Start Auto Sync` to watch local file changes, encrypt the folder, build the Docker image, and push it.
+5. Use `Auto Sync` to watch local file changes, encrypt the folder, build the Docker image, and push it.
+6. Enable `Startup` and mark profiles with `Auto push` to resume the watcher when this Windows user signs in.
 
-Passwords are passed to the sync process through `DEW_DRIVE_PASSWORD` and are not saved in the profile. The local folder is still a normal folder on disk; remote storage is the encrypted payload inside the Docker/OCI image.
+CLI passwords are passed to the sync process through `DEW_DRIVE_PASSWORD`. In the C# GUI, an entered Dew Drive password is stored as a Windows current-user protected secret so startup auto-sync can continue on the same machine. The local folder is still a normal folder on disk; remote storage is the encrypted payload inside the Docker/OCI image.
 
 ## Container Manager, Themes, And Hooks
 
