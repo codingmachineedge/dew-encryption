@@ -48,7 +48,16 @@ public sealed class SettingsService
             Directory.CreateDirectory(directory);
         }
 
-        File.WriteAllText(ConfigFilePath, JsonSerializer.Serialize(settings, JsonOptions));
+        string temporaryPath = ConfigFilePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            File.WriteAllText(temporaryPath, JsonSerializer.Serialize(settings, JsonOptions));
+            File.Move(temporaryPath, ConfigFilePath, overwrite: true);
+        }
+        finally
+        {
+            File.Delete(temporaryPath);
+        }
     }
 
     public static string ResolveConfigFilePath()

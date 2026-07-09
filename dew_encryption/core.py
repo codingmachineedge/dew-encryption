@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import uuid
 import zipfile
 import urllib.error
 import urllib.request
@@ -76,10 +77,6 @@ class FileChange:
 
 
 @dataclass
-class DewDriveProfile:
-    registry_ref: str
-
-@dataclass
 class VeraCryptSettings:
     encryption: str = "AES"
     hash: str = "SHA-512"
@@ -88,7 +85,7 @@ class VeraCryptSettings:
     size_padding_mb: int = 64
     size_multiplier: float = 1.25
     minimum_size_mb: int = 32
-    keep_source_after_encrypt: bool = False
+    keep_source_after_encrypt: bool = True
     keep_container_after_decrypt: bool = True
     veracrypt_path: str = ""
 
@@ -113,17 +110,6 @@ class HookAction:
 
 
 @dataclass
-class DewDriveProfile:
-    name: str = "Default"
-    local_path: str = ""
-    registry: str = ""
-    auto_push: bool = False
-    encryption_mode: str = "7z"
-    include_patterns: list[str] | None = None
-    exclude_patterns: list[str] | None = None
-
-
-@dataclass
 class ContainerProfile:
     name: str = "Default"
     path: str = ""
@@ -144,6 +130,7 @@ class DewDriveProfile:
     auto_push: bool = False
     include_patterns: list[str] = field(default_factory=list)
     exclude_patterns: list[str] = field(default_factory=list)
+    protected_password: str = ""
 
 
 @dataclass
@@ -264,7 +251,12 @@ def load_settings() -> AppSettings:
 def save_settings(settings: AppSettings) -> None:
     path = config_file()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(asdict(settings), indent=2), encoding="utf-8")
+    temporary = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        temporary.write_text(json.dumps(asdict(settings), indent=2), encoding="utf-8")
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def find_executable(name: str, fallbacks: list[Path] | None = None) -> Path:
@@ -284,8 +276,8 @@ def find_executable(name: str, fallbacks: list[Path] | None = None) -> Path:
     raise DewError(f"Required executable not found: {name}")
 
 
-def find_veracrypt() -> Path:
-    configured = load_settings().veracrypt.veracrypt_path
+def find_veracrypt(settings: VeraCryptSettings | None = None) -> Path:
+    configured = (settings or load_settings().veracrypt).veracrypt_path
     if configured and Path(configured).exists():
         return Path(configured)
     names = ["VeraCrypt.exe", "veracrypt.exe"] if os.name == "nt" else ["veracrypt"]
@@ -305,9 +297,9 @@ def find_veracrypt() -> Path:
     raise DewError("VeraCrypt was not found. Install VeraCrypt and make sure its CLI is available.")
 
 
-def find_veracrypt_format() -> Path:
+def find_veracrypt_format(settings: VeraCryptSettings | None = None) -> Path:
     """Volume creation on Windows is handled by "VeraCrypt Format.exe", not VeraCrypt.exe."""
-    vc = find_veracrypt()
+    vc = find_veracrypt(settings)
     if os.name != "nt":
         return vc
     candidates = [
@@ -505,6 +497,16 @@ def archive_output_dir(source: Path) -> Path:
     return out
 
 
+def archive_destination(paths: list[Path]) -> Path:
+    resolved = [path.resolve() for path in paths if path.exists()]
+    if not resolved:
+        raise DewError("No existing files or folders were selected.")
+    parents = {path.parent for path in resolved}
+    if len(parents) != 1:
+        raise DewError("Selected items must share one parent folder so the 7z archive can be placed beside them.")
+    return next(iter(parents))
+
+
 def repo_for_source(source: Path) -> Path:
     return archive_output_dir(source.resolve()) / REPO_DIR_NAME
 
@@ -550,9 +552,20 @@ def current_commit(repo: Path, git: Path | None = None) -> str:
         return ""
 
 
-def compress_repo(repo: Path, output_dir: Path, seven_zip: Path, password: str | None = None) -> Path:
+def compress_repo(
+    repo: Path,
+    output_dir: Path,
+    seven_zip: Path,
+    password: str | None = None,
+    archive_stem: str = "dew-encryption",
+) -> Path:
     stamp = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
-    archive = output_dir / f"dew-encryption-{stamp}.7z"
+    safe_stem = "".join(character if character.isalnum() or character in "-_." else "_" for character in archive_stem).strip("._")
+    archive = output_dir / f"{safe_stem or 'dew-encryption'}-{stamp}.7z"
+    collision = 2
+    while archive.exists():
+        archive = output_dir / f"{safe_stem or 'dew-encryption'}-{stamp}-{collision}.7z"
+        collision += 1
     cmd = [str(seven_zip), "a", "-t7z", "-mx=9", str(archive), str(repo)]
     if password:
         cmd.insert(4, "-mhe=on")
@@ -575,7 +588,13 @@ def process(paths: list[Path], password: str | None = None) -> DewResult:
     ensure_repo(repo, git)
     copy_selection(paths, repo)
     commit = commit_repo(repo, git, f"dew snapshot {dt.datetime.now().isoformat(timespec='seconds')}")
-    archive = compress_repo(repo, archive_output_dir(root), seven_zip, password=password)
+    archive = compress_repo(
+        repo,
+        archive_destination(paths),
+        seven_zip,
+        password=password,
+        archive_stem=root.name,
+    )
     return DewResult(source=root, repo=repo, archive=archive, commit=commit)
 
 
@@ -759,7 +778,7 @@ def veracrypt_create_container(
     source = source.resolve()
     if not source.exists():
         raise DewError(f"Source does not exist: {source}")
-    vc = find_veracrypt()
+    vc = find_veracrypt(settings)
     container = container_path_for_source(source)
     if container.exists():
         raise DewError(f"Container already exists: {container}")
@@ -770,7 +789,7 @@ def veracrypt_create_container(
         # "VeraCrypt Format.exe" rejects the VeraCrypt.exe-only /quit switch: with /silent the
         # suppressed parse-error dialog makes it hang forever, so never pass /quit here.
         run([
-            str(find_veracrypt_format()), "/create", str(container), "/size", size, "/password", password,
+            str(find_veracrypt_format(settings)), "/create", str(container), "/size", size, "/password", password,
             "/encryption", settings.encryption, "/hash", settings.hash, "/filesystem", settings.filesystem,
             "/pim", settings.pim, "/silent", "/force",
         ])
@@ -827,7 +846,7 @@ def veracrypt_decrypt_container(
     container = container.resolve()
     if not container.exists():
         raise DewError(f"Container does not exist: {container}")
-    vc = find_veracrypt()
+    vc = find_veracrypt(settings)
     output = (output or source_path_for_container(container)).resolve()
 
     if os.name == "nt":
@@ -1987,7 +2006,11 @@ def main(argv: list[str] | None = None) -> int:
             vc.keep_container_after_decrypt = args.keep_container_after_decrypt == "true"
         if not args.show:
             save_settings(settings)
-        print(json.dumps(asdict(settings), indent=2))
+        display_settings = asdict(settings)
+        for profile in display_settings.get("dew_drives", {}).get("drives", []):
+            if profile.get("protected_password"):
+                profile["protected_password"] = "<saved for current Windows user>"
+        print(json.dumps(display_settings, indent=2))
         return 0
 
     if argv and argv[0] == "veracrypt-encrypt":

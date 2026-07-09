@@ -22,7 +22,7 @@ OutputBaseFilename=DewEncryptionSetup
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
-PrivilegesRequired=lowest
+PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 SetupIconFile=..\assets\icons\dew-main.ico
@@ -33,6 +33,10 @@ Source: "..\dist\app\dew-encryption.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\app\dew-encryption-gui.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\app\dew-encryption-python-gui.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\installer\install-dependencies.ps1"; Flags: dontcopy
+Source: "..\dist\context-menu\DewEncryptionExplorerCommand.dll"; DestDir: "{app}\context-menu"; Flags: ignoreversion restartreplace uninsrestartdelete
+Source: "..\dist\context-menu\DewEncryption.ContextMenu.msix"; DestDir: "{app}\context-menu"; Flags: ignoreversion
+Source: "..\installer\install-win11-context-menu.ps1"; DestDir: "{app}\installer"; Flags: ignoreversion
+Source: "..\installer\uninstall-win11-context-menu.ps1"; DestDir: "{app}\installer"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\installer\create-elevated-tasks.ps1"; DestDir: "{app}\installer"; Flags: ignoreversion
@@ -40,6 +44,7 @@ Source: "..\installer\remove-elevated-tasks.ps1"; DestDir: "{app}\installer"; Fl
 Source: "..\installer\launch-create-elevated-tasks.ps1"; DestDir: "{app}\installer"; Flags: ignoreversion
 Source: "..\installer\launch-remove-elevated-tasks.ps1"; DestDir: "{app}\installer"; Flags: ignoreversion
 Source: "..\assets\icons\dew-main.ico"; DestDir: "{app}\icons"; Flags: ignoreversion
+Source: "..\assets\icons\dew-main.png"; DestDir: "{app}\icons"; Flags: ignoreversion
 Source: "..\assets\icons\dew-archive.ico"; DestDir: "{app}\icons"; Flags: ignoreversion
 Source: "..\assets\icons\dew-watch.ico"; DestDir: "{app}\icons"; Flags: ignoreversion
 Source: "..\assets\icons\dew-history.ico"; DestDir: "{app}\icons"; Flags: ignoreversion
@@ -47,29 +52,38 @@ Source: "..\assets\icons\dew-veracrypt-encrypt.ico"; DestDir: "{app}\icons"; Fla
 Source: "..\assets\icons\dew-veracrypt-decrypt.ico"; DestDir: "{app}\icons"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\Dew Encryption"; Filename: "{app}\{#MyAppGuiExeName}"
+Name: "{group}\Dew Encryption"; Filename: "{app}\{#MyAppGuiExeName}"; WorkingDir: "{app}"; IconFilename: "{app}\icons\dew-main.ico"
 Name: "{group}\Dew Encryption README"; Filename: "{app}\README.md"
 
 [Tasks]
 Name: "startup"; Description: "Start Dew Drive auto-sync at Windows login"; GroupDescription: "Startup:"
 
 [Run]
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ""{app}\installer\install-win11-context-menu.ps1"" -InstallRoot ""{app}"" -PackagePath ""{app}\context-menu\DewEncryption.ContextMenu.msix"" -SkipBuild"; StatusMsg: "Registering the Windows 11 Explorer context menu..."; Flags: runhidden waituntilterminated
 Filename: "{app}\{#MyAppGuiExeName}"; Description: "Launch Dew Encryption"; Flags: nowait postinstall skipifsilent
 
+[UninstallRun]
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File ""{app}\installer\uninstall-win11-context-menu.ps1"""; Flags: runhidden waituntilterminated; RunOnceId: "RemoveDewWin11ContextMenu"
+
 [Registry]
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "DewEncryptionDewDrive"; ValueData: """{app}\{#MyAppGuiExeName}"" --auto-sync --minimized"; Flags: uninsdeletevalue; Tasks: startup
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "DewEncryptionDewDrive"; ValueData: """{app}\{#MyAppGuiExeName}"" --auto-sync-worker"; Flags: uninsdeletevalue; Tasks: startup
+
+Root: HKLM; Subkey: "Software\DewEncryption\ContextMenu"; ValueType: string; ValueName: "InstallRoot"; ValueData: "{app}"; Flags: uninsdeletekey
+Root: HKLM; Subkey: "Software\DewEncryption\ContextMenu"; ValueType: string; ValueName: "CliPath"; ValueData: "{app}\{#MyAppExeName}"
+Root: HKLM; Subkey: "Software\DewEncryption\ContextMenu"; ValueType: string; ValueName: "PythonGuiPath"; ValueData: "{app}\{#MyPythonGuiExeName}"
+Root: HKLM; Subkey: "Software\DewEncryption\ContextMenu"; ValueType: string; ValueName: "IconPath"; ValueData: "{app}\icons\dew-main.ico"
 
 Root: HKCU; Subkey: "Software\Classes\*\shell\dew-encryption"; ValueType: string; ValueName: "MUIVerb"; ValueData: "dew encryption"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\*\shell\dew-encryption"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\icons\dew-archive.ico"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\Classes\*\shell\dew-encryption\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\*\shell\dew-encryption\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyPythonGuiExeName}"" --archive-encrypt %*"; Flags: uninsdeletekey
 
 Root: HKCU; Subkey: "Software\Classes\Directory\shell\dew-encryption"; ValueType: string; ValueName: "MUIVerb"; ValueData: "dew encryption"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\Directory\shell\dew-encryption"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\icons\dew-archive.ico"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\Classes\Directory\shell\dew-encryption\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\Directory\shell\dew-encryption\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyPythonGuiExeName}"" --archive-encrypt ""%1"""; Flags: uninsdeletekey
 
 Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\dew-encryption"; ValueType: string; ValueName: "MUIVerb"; ValueData: "dew encryption"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\dew-encryption"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\icons\dew-archive.ico"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\dew-encryption\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%V"""; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\dew-encryption\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyPythonGuiExeName}"" --archive-encrypt ""%V"""; Flags: uninsdeletekey
 
 Root: HKCU; Subkey: "Software\Classes\Directory\shell\dew-encryption-watch"; ValueType: string; ValueName: "MUIVerb"; ValueData: "dew encryption start file history"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\Directory\shell\dew-encryption-watch"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\icons\dew-watch.ico"; Flags: uninsdeletekey
@@ -90,27 +104,28 @@ Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\dew-encryption-
 Root: HKCU; Subkey: "Software\Classes\*\shell\dew-encryption-quick-create"; ValueType: string; ValueName: "MUIVerb"; ValueData: "dew encryption quick create container"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\*\shell\dew-encryption-quick-create"; ValueType: string; ValueName: "MultiSelectModel"; ValueData: "Player"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\*\shell\dew-encryption-quick-create"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\icons\dew-veracrypt-encrypt.ico"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\Classes\*\shell\dew-encryption-quick-create\command"; ValueType: string; ValueName: ""; ValueData: "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command ""& '{app}\{#MyAppExeName}' container-quick-create '%1' %*; Read-Host 'Press Enter to close'"""; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\*\shell\dew-encryption-quick-create\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyPythonGuiExeName}"" --container-quick-create %*"; Flags: uninsdeletekey
 
 Root: HKCU; Subkey: "Software\Classes\Directory\shell\dew-encryption-quick-create"; ValueType: string; ValueName: "MUIVerb"; ValueData: "dew encryption quick create container"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\Directory\shell\dew-encryption-quick-create"; ValueType: string; ValueName: "MultiSelectModel"; ValueData: "Player"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\Directory\shell\dew-encryption-quick-create"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\icons\dew-veracrypt-encrypt.ico"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\Classes\Directory\shell\dew-encryption-quick-create\command"; ValueType: string; ValueName: ""; ValueData: "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command ""& '{app}\{#MyAppExeName}' container-quick-create '%1' %*; Read-Host 'Press Enter to close'"""; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\Directory\shell\dew-encryption-quick-create\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyPythonGuiExeName}"" --container-quick-create %*"; Flags: uninsdeletekey
 
 Root: HKCU; Subkey: "Software\Classes\*\shell\dew-encryption-veracrypt-encrypt"; ValueType: string; ValueName: "MUIVerb"; ValueData: "dew encryption VeraCrypt encrypt"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\*\shell\dew-encryption-veracrypt-encrypt"; ValueType: string; ValueName: "MultiSelectModel"; ValueData: "Player"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\*\shell\dew-encryption-veracrypt-encrypt"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\icons\dew-veracrypt-encrypt.ico"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\Classes\*\shell\dew-encryption-veracrypt-encrypt\command"; ValueType: string; ValueName: ""; ValueData: "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command ""& '{app}\{#MyAppExeName}' veracrypt-encrypt '%1' %*; Read-Host 'Press Enter to close'"""; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\*\shell\dew-encryption-veracrypt-encrypt\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyPythonGuiExeName}"" --veracrypt-encrypt %*"; Flags: uninsdeletekey
 
 Root: HKCU; Subkey: "Software\Classes\Directory\shell\dew-encryption-veracrypt-encrypt"; ValueType: string; ValueName: "MUIVerb"; ValueData: "dew encryption VeraCrypt encrypt"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\Directory\shell\dew-encryption-veracrypt-encrypt"; ValueType: string; ValueName: "MultiSelectModel"; ValueData: "Player"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\Directory\shell\dew-encryption-veracrypt-encrypt"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\icons\dew-veracrypt-encrypt.ico"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\Classes\Directory\shell\dew-encryption-veracrypt-encrypt\command"; ValueType: string; ValueName: ""; ValueData: "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command ""& '{app}\{#MyAppExeName}' veracrypt-encrypt '%1' %*; Read-Host 'Press Enter to close'"""; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\Directory\shell\dew-encryption-veracrypt-encrypt\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyPythonGuiExeName}"" --veracrypt-encrypt %*"; Flags: uninsdeletekey
 
-Root: HKCU; Subkey: "Software\Classes\.hc\shell\dew-encryption-veracrypt-decrypt"; ValueType: string; ValueName: "MUIVerb"; ValueData: "dew encryption VeraCrypt decrypt"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\Classes\.hc\shell\dew-encryption-veracrypt-decrypt"; ValueType: string; ValueName: "MultiSelectModel"; ValueData: "Player"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\Classes\.hc\shell\dew-encryption-veracrypt-decrypt"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\icons\dew-veracrypt-decrypt.ico"; Flags: uninsdeletekey
-Root: HKCU; Subkey: "Software\Classes\.hc\shell\dew-encryption-veracrypt-decrypt\command"; ValueType: string; ValueName: ""; ValueData: "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command ""& '{app}\{#MyAppExeName}' veracrypt-decrypt '%1' %*; Read-Host 'Press Enter to close'"""; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\.hc\shell\dew-encryption-veracrypt-decrypt"; Flags: deletekey
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.hc\shell\dew-encryption-veracrypt-decrypt"; ValueType: string; ValueName: "MUIVerb"; ValueData: "dew encryption VeraCrypt decrypt"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.hc\shell\dew-encryption-veracrypt-decrypt"; ValueType: string; ValueName: "MultiSelectModel"; ValueData: "Player"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.hc\shell\dew-encryption-veracrypt-decrypt"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\icons\dew-veracrypt-decrypt.ico"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\SystemFileAssociations\.hc\shell\dew-encryption-veracrypt-decrypt\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyPythonGuiExeName}"" --veracrypt-decrypt %*"; Flags: uninsdeletekey
 
 Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\dew-encryption-create-elevated-tasks"; ValueType: string; ValueName: "MUIVerb"; ValueData: "dew encryption create elevated tasks"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\Directory\Background\shell\dew-encryption-create-elevated-tasks"; ValueType: string; ValueName: "Icon"; ValueData: "{app}\icons\dew-main.ico"; Flags: uninsdeletekey
@@ -203,6 +218,19 @@ begin
   Result := Missing;
 end;
 
+procedure ShowDependencyWarning(LogPath: String);
+var
+  WarningText: String;
+begin
+  WarningText := 'Dew Encryption setup will continue, but these components are still missing: ' +
+    MissingDependencyNames() + '.' + #13#10#13#10 +
+    'Features that use those components will be unavailable until they are installed.' + #13#10 +
+    'Log: ' + LogPath;
+  Log('WARNING: ' + WarningText);
+  if not WizardSilent then
+    MsgBox(WarningText, mbInformation, MB_OK);
+end;
+
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   DependencyScript: String;
@@ -213,6 +241,7 @@ var
   ResultCode: Integer;
 begin
   Result := '';
+  ResultCode := -1;
   NeedsRestart := False;
   if AllDependenciesInstalled() then
     Exit;
@@ -228,24 +257,15 @@ begin
     DependencyScript + '" -LogPath "' + LogPath + '" -WingetPath "' + WingetPath +
     '" -RestartMarkerPath "' + RestartMarkerPath + '"';
 
-  WizardForm.StatusLabel.Caption := 'Installing Git, 7-Zip, and VeraCrypt. A Windows permission prompt may appear...';
-  if not ShellExec('runas', ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
-    Parameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then begin
-    Result := 'Administrator approval is required to install Git, 7-Zip, and VeraCrypt.';
-    Exit;
-  end;
-
-  if ResultCode <> 0 then begin
-    Result := 'Dew Encryption could not install all required components.' + #13#10#13#10 +
-      'Still missing: ' + MissingDependencyNames() + #13#10 +
-      'Log: ' + LogPath + #13#10#13#10 +
-      'Check the internet connection or dependency log, then click Retry.';
-    Exit;
-  end;
+  WizardForm.StatusLabel.Caption := 'Installing Git, 7-Zip, and VeraCrypt...';
+  if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'),
+    Parameters, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+    Log('WARNING: The dependency installer could not be started. Setup will continue.')
+  else if ResultCode <> 0 then
+    Log(Format('WARNING: The dependency installer exited with code %d. Setup will continue.', [ResultCode]));
 
   if not AllDependenciesInstalled() then
-    Result := 'Dependency installation completed but these components are still missing: ' +
-      MissingDependencyNames() + '.' + #13#10 + 'Log: ' + LogPath;
+    ShowDependencyWarning(LogPath);
 
   if FileExists(RestartMarkerPath) then
     NeedsRestart := True;

@@ -37,6 +37,19 @@ if ($LASTEXITCODE -ne 0) { throw "C# GUI publish failed with exit code $LASTEXIT
 if (-not (Test-Path -LiteralPath .\dist\csharp-gui\DewEncryption.Gui.exe -PathType Leaf)) { throw "C# GUI publish did not create its executable." }
 Copy-Item .\dist\csharp-gui\DewEncryption.Gui.exe .\dist\app\dew-encryption-gui.exe -Force
 
+$packageBuild = if ($env:GITHUB_RUN_NUMBER -match '^\d+$') { [int64]$env:GITHUB_RUN_NUMBER % 65535 } else { [int](Get-Date -Format "MMdd") }
+$packageRevision = if ($env:GITHUB_RUN_ATTEMPT -match '^\d+$') { [int64]$env:GITHUB_RUN_ATTEMPT % 65535 } else { [int](Get-Date -Format "HHmm") }
+$packageVersion = "1.0.$packageBuild.$packageRevision"
+& .\scripts\build-win11-context-menu.ps1 `
+    -Configuration $Configuration `
+    -OutputDirectory (Join-Path $Root "dist\context-menu") `
+    -AppExecutableRelativePath "dew-encryption-gui.exe" `
+    -PackageVersion $packageVersion `
+    -InstallMissingTools
+if ($LASTEXITCODE -ne 0) { throw "Windows 11 context menu packaging failed with exit code $LASTEXITCODE." }
+if (-not (Test-Path -LiteralPath .\dist\context-menu\DewEncryptionExplorerCommand.dll -PathType Leaf)) { throw "Context menu DLL was not created." }
+if (-not (Test-Path -LiteralPath .\dist\context-menu\DewEncryption.ContextMenu.msix -PathType Leaf)) { throw "Context menu identity package was not created." }
+
 $iscc = Get-Command iscc -ErrorAction SilentlyContinue
 if (-not $iscc) {
     throw "Inno Setup Compiler (iscc) was not found. Install Inno Setup, then rerun this script."

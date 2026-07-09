@@ -6,17 +6,17 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $EscapedRoot = $ProjectRoot.Replace("'", "''")
 $EscapedPython = $Python.Replace("'", "''")
-$Command = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption '%1' }`""
-$FolderCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption '%V' }`""
+$Command = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption.gui --archive-encrypt '%1' %* }`""
+$FolderCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption.gui --archive-encrypt '%V' }`""
 $WatchCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; Start-Process -WindowStyle Hidden -FilePath '$EscapedPython' -ArgumentList @('-m','dew_encryption','watch','%1') }`""
 $WatchBackgroundCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; Start-Process -WindowStyle Hidden -FilePath '$EscapedPython' -ArgumentList @('-m','dew_encryption','watch','%V') }`""
 $ManagerCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption.gui '%1' --history }`""
 $ManagerBackgroundCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption.gui '%V' --history }`""
-$QuickCreateCommand = "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption container-quick-create '%1' %*; Read-Host 'Press Enter to close' }`""
+$QuickCreateCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption.gui --container-quick-create '%1' %* }`""
 $QuickCreateFolderCommand = $QuickCreateCommand
-$VeraCryptEncryptCommand = "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption veracrypt-encrypt '%1' %*; Read-Host 'Press Enter to close' }`""
-$VeraCryptFolderEncryptCommand = "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption veracrypt-encrypt '%1' %*; Read-Host 'Press Enter to close' }`""
-$VeraCryptDecryptCommand = "powershell -NoProfile -ExecutionPolicy Bypass -NoExit -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption veracrypt-decrypt '%1' %*; Read-Host 'Press Enter to close' }`""
+$VeraCryptEncryptCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption.gui --veracrypt-encrypt '%1' %* }`""
+$VeraCryptFolderEncryptCommand = $VeraCryptEncryptCommand
+$VeraCryptDecryptCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption.gui --veracrypt-decrypt '%1' %* }`""
 $CreateTasksCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File `"$EscapedRoot\installer\create-elevated-tasks.ps1`" -Python `"$EscapedPython`"' }`""
 $RemoveTasksCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Start-Process powershell -Verb RunAs -ArgumentList '-NoProfile -ExecutionPolicy Bypass -File `"$EscapedRoot\installer\remove-elevated-tasks.ps1`"' }`""
 $DewDriveAddCommand = "powershell -NoProfile -ExecutionPolicy Bypass -Command `"& { Set-Location -LiteralPath '$EscapedRoot'; & '$EscapedPython' -m dew_encryption dew-drive add '%1' }`""
@@ -64,7 +64,7 @@ $keys = @(
     @{ Path = "HKCU:\Software\Classes\Directory\shell\dew-encryption-quick-create"; Verb = "dew encryption quick create container"; Command = $QuickCreateFolderCommand },
     @{ Path = "HKCU:\Software\Classes\*\shell\dew-encryption-veracrypt-encrypt"; Verb = "dew encryption VeraCrypt encrypt"; Command = $VeraCryptEncryptCommand },
     @{ Path = "HKCU:\Software\Classes\Directory\shell\dew-encryption-veracrypt-encrypt"; Verb = "dew encryption VeraCrypt encrypt"; Command = $VeraCryptFolderEncryptCommand },
-    @{ Path = "HKCU:\Software\Classes\.hc\shell\dew-encryption-veracrypt-decrypt"; Verb = "dew encryption VeraCrypt decrypt"; Command = $VeraCryptDecryptCommand },
+    @{ Path = "HKCU:\Software\Classes\SystemFileAssociations\.hc\shell\dew-encryption-veracrypt-decrypt"; Verb = "dew encryption VeraCrypt decrypt"; Command = $VeraCryptDecryptCommand },
     @{ Path = "HKCU:\Software\Classes\Directory\Background\shell\dew-encryption-create-elevated-tasks"; Verb = "dew encryption create elevated tasks"; Command = $CreateTasksCommand },
     @{ Path = "HKCU:\Software\Classes\Directory\Background\shell\dew-encryption-remove-elevated-tasks"; Verb = "dew encryption remove elevated tasks"; Command = $RemoveTasksCommand },
     @{ Path = "HKCU:\Software\Classes\*\shell\dew-encryption-dew-drive-add"; Verb = "dew encryption add to Dew Drive"; Command = $DewDriveAddCommand },
@@ -74,6 +74,12 @@ $keys = @(
     @{ Path = "HKCU:\Software\Classes\Directory\Background\shell\dew-encryption-docker-save-here"; Verb = "dew encryption save Docker image here"; Command = $DockerSaveHereCommand },
     @{ Path = "HKCU:\Software\Classes\Directory\Background\shell\dew-encryption-git-commit-push"; Verb = "dew encryption commit and push repo"; Command = $GitCommitPushCommand; RepoOnly = $true },
     @{ Path = "HKCU:\Software\Classes\Directory\shell\dew-encryption-git-commit-push"; Verb = "dew encryption commit and push repo"; Command = $GitCommitPushFolderCommand; RepoOnly = $true }
+)
+
+# Remove the older extension key, which can be shadowed when VeraCrypt owns the .hc ProgID.
+[Microsoft.Win32.Registry]::CurrentUser.DeleteSubKeyTree(
+    "Software\Classes\.hc\shell\dew-encryption-veracrypt-decrypt",
+    $false
 )
 
 foreach ($item in $keys) {

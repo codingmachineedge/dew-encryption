@@ -39,6 +39,12 @@ jobs:
           if ($err) { throw $err }
           [System.Management.Automation.PSParser]::Tokenize((Get-Content .\scripts\build-windows-installer.ps1 -Raw), [ref]$err) | Out-Null
           if ($err) { throw $err }
+          [System.Management.Automation.PSParser]::Tokenize((Get-Content .\scripts\build-win11-context-menu.ps1 -Raw), [ref]$err) | Out-Null
+          if ($err) { throw $err }
+          [System.Management.Automation.PSParser]::Tokenize((Get-Content .\installer\install-win11-context-menu.ps1 -Raw), [ref]$err) | Out-Null
+          if ($err) { throw $err }
+          [System.Management.Automation.PSParser]::Tokenize((Get-Content .\installer\uninstall-win11-context-menu.ps1 -Raw), [ref]$err) | Out-Null
+          if ($err) { throw $err }
       - name: Smoke test snapshot
         shell: pwsh
         run: |
@@ -60,7 +66,7 @@ jobs:
           if ((Get-Content (Join-Path $sample "notes.txt") -Raw).Trim() -ne "ci sample") {
             throw "Restore did not return the folder to the first commit."
           }
-          if (-not (Get-ChildItem (Join-Path $sample "Dew Encryption Archives") -Filter *.7z)) {
+          if (-not (Get-ChildItem $sample -Filter *.7z)) {
             throw "No archive was produced."
           }
 

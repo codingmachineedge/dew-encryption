@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import argparse
 import queue
 import os
 import subprocess
 import sys
 import threading
 import tkinter as tk
+from dataclasses import replace
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
+
+from .action_dialog import run_action_dialog
 
 from .core import (
     ContainerProfile,
@@ -225,6 +229,8 @@ class DewFileManager(tk.Tk):
             self.drive_tree.insert("", "end", iid=str(idx), values=(profile.name, profile.folder))
 
     def new_drive_profile(self) -> None:
+        for item in self.drive_tree.selection():
+            self.drive_tree.selection_remove(item)
         for var in self.drive_vars.values():
             var.set("")
         self.drive_vars["name"].set("New Drive")
@@ -238,12 +244,27 @@ class DewFileManager(tk.Tk):
             return
         profile = (self.settings.dew_drives or [])[int(selected[0])]
         for key in self.drive_vars:
-            self.drive_vars[key].set(getattr(profile, key, ""))
+            value = getattr(profile, key, "")
+            self.drive_vars[key].set(", ".join(value) if isinstance(value, list) else value)
 
     def save_drive_profile(self) -> DewDriveProfile:
-        profile = DewDriveProfile(**{key: str(var.get()) for key, var in self.drive_vars.items()})
         self.settings.dew_drives = self.settings.dew_drives or []
         selected = self.drive_tree.selection()
+        existing = self.settings.dew_drives[int(selected[0])] if selected else None
+        base = existing or DewDriveProfile()
+        folder = str(self.drive_vars["folder"].get())
+        registry = str(self.drive_vars["registry_image"].get())
+        profile = replace(
+            base,
+            name=str(self.drive_vars["name"].get()),
+            local_path=folder,
+            folder=folder,
+            registry_ref=registry,
+            registry_image=registry,
+            encryption_mode=str(self.drive_vars["encryption_mode"].get()),
+            include_patterns=[item.strip() for item in str(self.drive_vars["include_patterns"].get()).split(",") if item.strip()],
+            exclude_patterns=[item.strip() for item in str(self.drive_vars["exclude_patterns"].get()).split(",") if item.strip()],
+        )
         if selected:
             self.settings.dew_drives[int(selected[0])] = profile
         else:
@@ -811,18 +832,33 @@ class DewFileManager(tk.Tk):
 
 
 def main() -> None:
-    args = sys.argv[1:]
-    open_history = "--history" in args
-    upload_path = Path(args[args.index("--docker-upload") + 1]) if "--docker-upload" in args and args.index("--docker-upload") + 1 < len(args) else None
-    save_dir = Path(args[args.index("--docker-save-here") + 1]) if "--docker-save-here" in args and args.index("--docker-save-here") + 1 < len(args) else None
-    skip = {"--history", "--docker-upload", "--docker-save-here"}
-    values_to_skip = {str(upload_path), str(save_dir)}
-    paths = [Path(arg) for arg in args if arg not in skip and arg not in values_to_skip]
-    app = DewFileManager(paths, open_history=open_history)
-    if upload_path:
-        app.after(100, lambda: app.open_docker_upload_dialog(upload_path))
-    if save_dir:
-        app.after(100, lambda: app.open_docker_save_dialog(save_dir))
+    parser = argparse.ArgumentParser(prog="dew-encryption-python-gui")
+    parser.add_argument("paths", nargs="*", type=Path)
+    operation = parser.add_mutually_exclusive_group()
+    operation.add_argument("--history", action="store_true")
+    operation.add_argument("--docker-upload", type=Path)
+    operation.add_argument("--docker-save-here", type=Path)
+    operation.add_argument("--archive-encrypt", nargs="+", type=Path)
+    operation.add_argument("--container-quick-create", nargs="+", type=Path)
+    operation.add_argument("--veracrypt-encrypt", nargs="+", type=Path)
+    operation.add_argument("--veracrypt-decrypt", nargs="+", type=Path)
+    args = parser.parse_args()
+
+    for value, action in (
+        (args.archive_encrypt, "archive"),
+        (args.container_quick_create, "container_quick_create"),
+        (args.veracrypt_encrypt, "veracrypt_encrypt"),
+        (args.veracrypt_decrypt, "veracrypt_decrypt"),
+    ):
+        if value:
+            run_action_dialog(action, value)
+            return
+
+    app = DewFileManager(args.paths, open_history=args.history)
+    if args.docker_upload:
+        app.after(100, lambda: app.open_docker_upload_dialog(args.docker_upload))
+    if args.docker_save_here:
+        app.after(100, lambda: app.open_docker_save_dialog(args.docker_save_here))
     app.mainloop()
 
 

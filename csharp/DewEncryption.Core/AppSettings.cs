@@ -14,7 +14,7 @@ public sealed record VeraCryptSettings(
     int SizePaddingMb = 64,
     double SizeMultiplier = 1.25,
     int MinimumSizeMb = 32,
-    bool KeepSourceAfterEncrypt = false,
+    bool KeepSourceAfterEncrypt = true,
     bool KeepContainerAfterDecrypt = true,
     string VeraCryptPath = "");
 

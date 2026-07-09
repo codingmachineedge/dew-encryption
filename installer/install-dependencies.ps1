@@ -31,6 +31,25 @@ function Test-Dependency {
     return [bool]($Paths | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) } | Select-Object -First 1)
 }
 
+function Wait-Dependency {
+    param(
+        [string]$Command,
+        [string[]]$Paths,
+        [int]$Attempts = 10,
+        [int]$DelayMilliseconds = 500
+    )
+
+    for ($attempt = 1; $attempt -le $Attempts; $attempt++) {
+        if (Test-Dependency -Command $Command -Paths $Paths) {
+            return $true
+        }
+        if ($attempt -lt $Attempts) {
+            Start-Sleep -Milliseconds $DelayMilliseconds
+        }
+    }
+    return $false
+}
+
 function Set-InstallerExitState {
     param(
         [string]$Name,
@@ -158,50 +177,70 @@ try {
     $winget = $wingetCandidates |
         Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) } |
         Select-Object -First 1
+    $installationErrors = [System.Collections.Generic.List[string]]::new()
     foreach ($dependency in $missing) {
-        $installed = $false
-        if ($winget) {
-            Write-DependencyLog "Installing $($dependency.Name) with winget package $($dependency.Id)."
-            & $winget install `
-                --exact `
-                --id $dependency.Id `
-                --source winget `
-                --silent `
-                --accept-source-agreements `
-                --accept-package-agreements `
-                --disable-interactivity
+        try {
+            $installed = $false
+            if ($winget) {
+                Write-DependencyLog "Installing $($dependency.Name) with winget package $($dependency.Id)."
+                & $winget install `
+                    --exact `
+                    --id $dependency.Id `
+                    --source winget `
+                    --silent `
+                    --accept-source-agreements `
+                    --accept-package-agreements `
+                    --disable-interactivity
 
-            $wingetExitCode = $LASTEXITCODE
-            if ($wingetExitCode -in @(0, 1641, 3010)) {
-                if ($wingetExitCode -in @(1641, 3010)) {
-                    $script:RestartRequired = $true
+                $wingetExitCode = $LASTEXITCODE
+                if ($wingetExitCode -in @(0, 1641, 3010)) {
+                    if ($wingetExitCode -in @(1641, 3010)) {
+                        $script:RestartRequired = $true
+                    }
+                    $installed = Wait-Dependency -Command $dependency.Command -Paths $dependency.Paths
                 }
-                $installed = Test-Dependency -Command $dependency.Command -Paths $dependency.Paths
+
+                if (-not $installed) {
+                    Write-DependencyLog "winget did not complete $($dependency.Name) installation (exit $wingetExitCode); using the verified direct fallback."
+                }
+            }
+            else {
+                Write-DependencyLog "winget is unavailable; using the verified direct fallback for $($dependency.Name)."
             }
 
             if (-not $installed) {
-                Write-DependencyLog "winget did not complete $($dependency.Name) installation (exit $wingetExitCode); using the verified direct fallback."
+                Install-VerifiedPackage -Dependency $dependency
+                $installed = Wait-Dependency -Command $dependency.Command -Paths $dependency.Paths
             }
-        }
-        else {
-            Write-DependencyLog "winget is unavailable; using the verified direct fallback for $($dependency.Name)."
-        }
 
-        if (-not $installed) {
-            Install-VerifiedPackage -Dependency $dependency
-        }
+            if (-not $installed) {
+                throw "$($dependency.Name) is still missing after its installer completed."
+            }
 
-        if (-not (Test-Dependency -Command $dependency.Command -Paths $dependency.Paths)) {
-            throw "$($dependency.Name) is still missing after its installer completed."
+            Write-DependencyLog "$($dependency.Name) is installed."
         }
-
-        Write-DependencyLog "$($dependency.Name) is installed."
+        catch {
+            $message = "$($dependency.Name): $($_.Exception.Message)"
+            $installationErrors.Add($message)
+            Write-DependencyLog "ERROR: $message Continuing with the remaining dependencies."
+        }
     }
 
-    Write-DependencyLog "All required dependencies are installed."
     if ($script:RestartRequired -and $RestartMarkerPath) {
         Set-Content -LiteralPath $RestartMarkerPath -Value "restart-required" -Encoding ASCII
     }
+
+    $stillMissing = @($dependencies | Where-Object { -not (Test-Dependency -Command $_.Command -Paths $_.Paths) })
+    if ($stillMissing.Count -gt 0) {
+        $missingNames = ($stillMissing | ForEach-Object Name) -join ", "
+        Write-DependencyLog "WARNING: Setup will continue, but these dependencies are still missing: $missingNames."
+        if ($installationErrors.Count -gt 0) {
+            Write-DependencyLog "Dependency errors: $($installationErrors -join ' | ')"
+        }
+        exit 1
+    }
+
+    Write-DependencyLog "All required dependencies are installed."
     exit 0
 }
 catch {

@@ -16,6 +16,10 @@ target_compile_definitions(DewEncryptionExplorerCommand PRIVATE
 
 target_compile_features(DewEncryptionExplorerCommand PRIVATE cxx_std_17)
 
+set_property(TARGET DewEncryptionExplorerCommand PROPERTY
+    MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>"
+)
+
 target_link_libraries(DewEncryptionExplorerCommand PRIVATE
     advapi32
     ole32

@@ -256,14 +256,17 @@
                   <StackPanel Spacing="8">
                     <StackPanel Orientation="Horizontal" Spacing="8">
                       <icons:MaterialIcon Kind="Docker" Width="16" Height="16" VerticalAlignment="Center" Opacity="0.75" />
-                      <TextBlock Text="Docker Hub helper" Classes="label" VerticalAlignment="Center" />
+                      <TextBlock Text="Container registry helper" Classes="label" VerticalAlignment="Center" />
                     </StackPanel>
                     <WrapPanel>
-                      <TextBox x:Name="DockerHubUserBox" UseFloatingWatermark="True" assists:TextFieldAssist.Label="Docker Hub username" Width="200" Margin="0,0,8,0" />
-                      <TextBox x:Name="DockerHubRepoBox" UseFloatingWatermark="True" assists:TextFieldAssist.Label="Repository" Watermark="dew-drive" Width="180" Margin="0,0,8,0" />
+                      <TextBox x:Name="DockerHubUserBox" UseFloatingWatermark="True" assists:TextFieldAssist.Label="Username / organization" Width="200" Margin="0,0,8,0" />
+                      <TextBox x:Name="DockerHubRepoBox" UseFloatingWatermark="True" assists:TextFieldAssist.Label="Repository / package" Watermark="dew-drive" Width="180" Margin="0,0,8,0" />
                       <TextBox x:Name="DockerHubTagBox" UseFloatingWatermark="True" assists:TextFieldAssist.Label="Tag" Text="latest" Width="100" Margin="0,0,8,0" />
-                      <Button Classes="Outline" Click="UseDockerHub_Click" VerticalAlignment="Center" ToolTip.Tip="Fill the upload image tag with docker.io/username/repository:tag.">
+                      <Button Classes="Outline" Click="UseDockerHub_Click" VerticalAlignment="Center" Margin="0,0,8,0" ToolTip.Tip="Fill the upload image tag with docker.io/username/repository:tag.">
                         <TextBlock Text="Use Docker Hub" />
+                      </Button>
+                      <Button Classes="Outline" Click="UseGhcr_Click" VerticalAlignment="Center" ToolTip.Tip="Fill the upload image tag with ghcr.io/owner/package:tag.">
+                        <TextBlock Text="Use GHCR" />
                       </Button>
                     </WrapPanel>
                   </StackPanel>
@@ -279,8 +282,9 @@
                   <TextBox Grid.Column="1" x:Name="DrivePasswordBox" UseFloatingWatermark="True" assists:TextFieldAssist.Label="Password" Classes="revealPasswordButton" PasswordChar="*" Margin="0,0,0,10" />
                 </Grid>
                 <StackPanel Orientation="Horizontal" Spacing="16" Margin="0,0,0,6">
-                  <CheckBox x:Name="DriveAutoPushBox" Content="Auto push" ToolTip.Tip="Watch this profile when startup auto-sync launches." />
-                  <CheckBox x:Name="DriveStartAtLoginBox" Content="Start at login" ToolTip.Tip="Start Dew Drive auto-sync when this Windows user signs in." Click="DriveStartAtLogin_Click" />
+                  <CheckBox x:Name="DriveSavePasswordBox" IsChecked="True" Content="Save password on profile" ToolTip.Tip="Encrypt this password with Windows DPAPI for this Windows user." />
+                  <CheckBox x:Name="DriveAutoPushBox" Content="Auto push" ToolTip.Tip="Keep this profile watched by the background auto-sync worker." />
+                  <CheckBox x:Name="DriveStartAtLoginBox" Content="Start at login" ToolTip.Tip="Start the background auto-sync worker when this Windows user signs in." Click="DriveStartAtLogin_Click" />
                 </StackPanel>
 
                 <Expander Margin="0,4,0,10">
@@ -319,7 +323,7 @@
 
                 <TextBlock Text="Sync" Classes="sectionTitle" Margin="0,2,0,8" />
                 <WrapPanel>
-                  <Button Click="StartDriveAutoSync_Click" Margin="0,0,8,8" ToolTip.Tip="Watch the folder and sync automatically after changes settle.">
+                  <Button Click="StartDriveAutoSync_Click" Margin="0,0,8,8" ToolTip.Tip="Watch the folder in a separate background process that remains active after this window closes.">
                     <StackPanel Orientation="Horizontal" Spacing="8">
                       <icons:MaterialIcon Kind="Sync" Width="16" Height="16" />
                       <TextBlock Text="Auto Sync" />
@@ -367,12 +371,16 @@
 
     <!-- Activity -->
     <controls:Card Grid.Row="2" Padding="16,12" Margin="16,0,16,16">
-      <Grid RowDefinitions="Auto,*">
+      <Grid RowDefinitions="Auto,Auto,*">
         <StackPanel Orientation="Horizontal" Spacing="8">
           <icons:MaterialIcon Kind="Console" Width="16" Height="16" VerticalAlignment="Center" Opacity="0.7" />
           <TextBlock Text="Activity" Classes="sectionTitle" />
         </StackPanel>
-        <TextBox x:Name="LogBox" Grid.Row="1" Height="64" AcceptsReturn="True" IsReadOnly="True" TextWrapping="Wrap" FontFamily="Cascadia Mono, Consolas, monospace" FontSize="12" Margin="0,8,0,0" />
+        <Grid x:Name="JobProgressPanel" Grid.Row="1" ColumnDefinitions="*,Auto" IsVisible="False" Margin="0,8,0,0">
+          <ProgressBar x:Name="JobProgressBar" IsIndeterminate="True" Height="5" VerticalAlignment="Center" />
+          <TextBlock x:Name="JobProgressText" Grid.Column="1" Text="Working..." Classes="muted" Margin="12,0,0,0" MaxWidth="520" TextTrimming="CharacterEllipsis" />
+        </Grid>
+        <TextBox x:Name="LogBox" Grid.Row="2" Height="64" AcceptsReturn="True" IsReadOnly="True" TextWrapping="Wrap" FontFamily="Cascadia Mono, Consolas, monospace" FontSize="12" Margin="0,8,0,0" />
       </Grid>
     </controls:Card>
   </Grid>

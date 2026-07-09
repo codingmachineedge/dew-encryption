@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.ComponentModel;
+using System.Text;
 
 namespace DewEncryption.Core;
 
@@ -22,6 +23,15 @@ public sealed class DewCliService
     public Task<DewCommandResult> RunSelectedAsync(IEnumerable<string> paths, CancellationToken cancellationToken = default)
     {
         return RunCliAsync(paths, cancellationToken);
+    }
+
+    public Task<DewCommandResult> OpenArchiveEncryptionGuiAsync(IEnumerable<string> paths, CancellationToken cancellationToken = default)
+    {
+        return RunToolWithFallbackAsync(
+            HistoryGuiFileName,
+            ["-m", "dew_encryption.gui"],
+            ["--archive-encrypt", .. paths],
+            cancellationToken);
     }
 
     public Task<DewCommandResult> SnapshotHistoryAsync(string path, CancellationToken cancellationToken = default)
@@ -78,7 +88,13 @@ public sealed class DewCliService
         return RunCliAsync(args, cancellationToken);
     }
 
-    public Task<DewCommandResult> SyncDewDriveProfileAsync(string profileName, string? registry, bool push, string? password, CancellationToken cancellationToken = default)
+    public Task<DewCommandResult> SyncDewDriveProfileAsync(
+        string profileName,
+        string? registry,
+        bool push,
+        string? password,
+        CancellationToken cancellationToken = default,
+        IProgress<string>? outputProgress = null)
     {
         List<string> args = ["dew-drive", "sync", profileName];
         if (!string.IsNullOrWhiteSpace(registry))
@@ -92,7 +108,7 @@ public sealed class DewCliService
             args.Add("--push");
         }
 
-        return RunCliAsync(args, cancellationToken, PasswordEnvironment(password));
+        return RunCliAsync(args, cancellationToken, PasswordEnvironment(password), outputProgress);
     }
 
     public Task<DewCommandResult> PullDewDriveAsync(string registryRef, string outputFolder, string? password = null, bool force = false, CancellationToken cancellationToken = default)
@@ -152,22 +168,32 @@ public sealed class DewCliService
             cancellationToken);
     }
 
-    public Task<DewCommandResult> RunCliAsync(IEnumerable<string> arguments, CancellationToken cancellationToken = default, IReadOnlyDictionary<string, string>? environment = null)
+    public Task<DewCommandResult> RunCliAsync(
+        IEnumerable<string> arguments,
+        CancellationToken cancellationToken = default,
+        IReadOnlyDictionary<string, string>? environment = null,
+        IProgress<string>? outputProgress = null)
     {
-        return RunToolWithFallbackAsync(CliFileName, ["-m", "dew_encryption.core"], arguments, cancellationToken, environment);
+        return RunToolWithFallbackAsync(CliFileName, ["-m", "dew_encryption.core"], arguments, cancellationToken, environment, outputProgress);
     }
 
-    private static async Task<DewCommandResult> RunToolWithFallbackAsync(string fileName, IReadOnlyList<string> pythonModulePrefix, IEnumerable<string> arguments, CancellationToken cancellationToken, IReadOnlyDictionary<string, string>? environment = null)
+    private static async Task<DewCommandResult> RunToolWithFallbackAsync(
+        string fileName,
+        IReadOnlyList<string> pythonModulePrefix,
+        IEnumerable<string> arguments,
+        CancellationToken cancellationToken,
+        IReadOnlyDictionary<string, string>? environment = null,
+        IProgress<string>? outputProgress = null)
     {
         string[] argumentArray = arguments.ToArray();
         try
         {
-            return await RunProcessAsync(fileName, argumentArray, cancellationToken, environment: environment).ConfigureAwait(false);
+            return await RunProcessAsync(fileName, argumentArray, cancellationToken, environment: environment, outputProgress: outputProgress).ConfigureAwait(false);
         }
         catch (Win32Exception ex) when (IsFileNotFound(ex))
         {
             string python = Environment.GetEnvironmentVariable("DEW_ENCRYPTION_PYTHON") ?? "python";
-            return await RunProcessAsync(python, pythonModulePrefix.Concat(argumentArray), cancellationToken, ResolvePythonWorkingDirectory(), environment).ConfigureAwait(false);
+            return await RunProcessAsync(python, pythonModulePrefix.Concat(argumentArray), cancellationToken, ResolvePythonWorkingDirectory(), environment, outputProgress).ConfigureAwait(false);
         }
     }
 
@@ -209,7 +235,13 @@ public sealed class DewCliService
         return null;
     }
 
-    public static async Task<DewCommandResult> RunProcessAsync(string fileName, IEnumerable<string> arguments, CancellationToken cancellationToken = default, string? workingDirectory = null, IReadOnlyDictionary<string, string>? environment = null)
+    public static async Task<DewCommandResult> RunProcessAsync(
+        string fileName,
+        IEnumerable<string> arguments,
+        CancellationToken cancellationToken = default,
+        string? workingDirectory = null,
+        IReadOnlyDictionary<string, string>? environment = null,
+        IProgress<string>? outputProgress = null)
     {
         string[] argumentArray = arguments.ToArray();
         ProcessStartInfo startInfo = new()
@@ -235,10 +267,32 @@ public sealed class DewCliService
         }
 
         using Process process = Process.Start(startInfo) ?? throw new InvalidOperationException($"Unable to start {fileName}.");
-        Task<string> outputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-        Task<string> errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
-        await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+        Task<string> outputTask = PumpOutputAsync(process.StandardOutput, outputProgress, cancellationToken);
+        Task<string> errorTask = PumpOutputAsync(process.StandardError, outputProgress, cancellationToken);
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            if (!process.HasExited)
+            {
+                process.Kill(entireProcessTree: true);
+            }
+            throw;
+        }
 
         return new DewCommandResult(fileName, argumentArray, process.ExitCode, await outputTask.ConfigureAwait(false), await errorTask.ConfigureAwait(false));
+    }
+
+    private static async Task<string> PumpOutputAsync(StreamReader reader, IProgress<string>? progress, CancellationToken cancellationToken)
+    {
+        StringBuilder output = new();
+        while (await reader.ReadLineAsync(cancellationToken).ConfigureAwait(false) is { } line)
+        {
+            output.AppendLine(line);
+            progress?.Report(line);
+        }
+        return output.ToString();
     }
 }

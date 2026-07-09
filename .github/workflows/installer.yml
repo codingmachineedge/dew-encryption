@@ -45,6 +45,8 @@ jobs:
             "dist\app\dew-encryption-gui.exe",
             "dist\app\dew-encryption-python-gui.exe",
             "dist\csharp-gui\DewEncryption.Gui.exe",
+            "dist\context-menu\DewEncryptionExplorerCommand.dll",
+            "dist\context-menu\DewEncryption.ContextMenu.msix",
             "dist\installer\DewEncryptionSetup.exe"
           )
 
@@ -121,5 +123,6 @@ jobs:
             --target $env:GITHUB_SHA `
             --title $env:RELEASE_TITLE `
             --notes $notes `
+            --draft=false `
             --prerelease `
             --latest=false

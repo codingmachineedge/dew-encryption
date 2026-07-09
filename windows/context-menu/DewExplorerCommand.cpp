@@ -29,6 +29,7 @@ enum class DewCommandKind {
     Watch,
     QuickCreateContainer,
     VeraCryptEncrypt,
+    VeraCryptDecrypt,
     GitCommitPush,
     DockerUpload,
     DockerSaveHere,
@@ -128,6 +129,18 @@ std::wstring PythonPath() {
     return python.empty() ? std::wstring(kFallbackPython) : python;
 }
 
+std::wstring CliPath() {
+    return ReadConfigString(L"CliPath");
+}
+
+std::wstring PythonGuiPath() {
+    return ReadConfigString(L"PythonGuiPath");
+}
+
+std::wstring ConfiguredIconPath() {
+    return ReadConfigString(L"IconPath");
+}
+
 std::wstring JoinPath(const std::wstring& left, const std::wstring& right) {
     if (left.empty()) {
         return right;
@@ -173,7 +186,7 @@ std::wstring BuildPythonArgs(DewCommandKind kind, const std::vector<std::wstring
     std::vector<std::wstring> args;
     switch (kind) {
     case DewCommandKind::Snapshot:
-        args = {L"-m", L"dew_encryption"};
+        args = {L"-m", L"dew_encryption.gui", L"--archive-encrypt"};
         args.insert(args.end(), paths.begin(), paths.end());
         break;
     case DewCommandKind::History:
@@ -190,11 +203,15 @@ std::wstring BuildPythonArgs(DewCommandKind kind, const std::vector<std::wstring
         }
         break;
     case DewCommandKind::QuickCreateContainer:
-        args = {L"-m", L"dew_encryption", L"container-quick-create"};
+        args = {L"-m", L"dew_encryption.gui", L"--container-quick-create"};
         args.insert(args.end(), paths.begin(), paths.end());
         break;
     case DewCommandKind::VeraCryptEncrypt:
-        args = {L"-m", L"dew_encryption", L"veracrypt-encrypt"};
+        args = {L"-m", L"dew_encryption.gui", L"--veracrypt-encrypt"};
+        args.insert(args.end(), paths.begin(), paths.end());
+        break;
+    case DewCommandKind::VeraCryptDecrypt:
+        args = {L"-m", L"dew_encryption.gui", L"--veracrypt-decrypt"};
         args.insert(args.end(), paths.begin(), paths.end());
         break;
     case DewCommandKind::GitCommitPush:
@@ -227,47 +244,127 @@ std::wstring BuildPythonArgs(DewCommandKind kind, const std::vector<std::wstring
     return command_line;
 }
 
+std::wstring BuildPackagedArgs(DewCommandKind kind, const std::vector<std::wstring>& paths) {
+    std::vector<std::wstring> args;
+    switch (kind) {
+    case DewCommandKind::Snapshot:
+        args = {L"--archive-encrypt"};
+        args.insert(args.end(), paths.begin(), paths.end());
+        break;
+    case DewCommandKind::History:
+        if (!paths.empty()) {
+            args.push_back(paths.front());
+        }
+        args.push_back(L"--history");
+        break;
+    case DewCommandKind::Watch:
+        args = {L"watch"};
+        if (!paths.empty()) {
+            args.push_back(paths.front());
+        }
+        break;
+    case DewCommandKind::QuickCreateContainer:
+        args = {L"--container-quick-create"};
+        args.insert(args.end(), paths.begin(), paths.end());
+        break;
+    case DewCommandKind::VeraCryptEncrypt:
+        args = {L"--veracrypt-encrypt"};
+        args.insert(args.end(), paths.begin(), paths.end());
+        break;
+    case DewCommandKind::VeraCryptDecrypt:
+        args = {L"--veracrypt-decrypt"};
+        args.insert(args.end(), paths.begin(), paths.end());
+        break;
+    case DewCommandKind::GitCommitPush:
+        args = {L"git-commit-push"};
+        if (!paths.empty()) {
+            args.push_back(paths.front());
+        }
+        break;
+    case DewCommandKind::DockerUpload:
+        args = {L"--docker-upload"};
+        if (!paths.empty()) {
+            args.push_back(paths.front());
+        }
+        break;
+    case DewCommandKind::DockerSaveHere:
+        args = {L"--docker-save-here"};
+        if (!paths.empty()) {
+            args.push_back(paths.front());
+        }
+        break;
+    }
+
+    std::wstring command_line;
+    for (const auto& arg : args) {
+        if (!command_line.empty()) {
+            command_line.push_back(L' ');
+        }
+        command_line += QuoteArg(arg);
+    }
+    return command_line;
+}
+
 bool IsConsoleCommand(DewCommandKind kind) {
-    return kind == DewCommandKind::QuickCreateContainer ||
+    return kind == DewCommandKind::GitCommitPush;
+}
+
+bool IsGuiCommand(DewCommandKind kind) {
+    return kind == DewCommandKind::Snapshot ||
+           kind == DewCommandKind::History ||
+           kind == DewCommandKind::QuickCreateContainer ||
            kind == DewCommandKind::VeraCryptEncrypt ||
-           kind == DewCommandKind::GitCommitPush;
+           kind == DewCommandKind::VeraCryptDecrypt ||
+           kind == DewCommandKind::DockerUpload ||
+           kind == DewCommandKind::DockerSaveHere;
 }
 
 HRESULT LaunchPython(DewCommandKind kind, IShellItemArray* items) {
     std::vector<std::wstring> paths = SelectionPaths(items);
     std::wstring root = InstallRoot();
-    std::wstring python = PythonPath();
-    std::wstring args = BuildPythonArgs(kind, paths);
+    const bool gui_command = IsGuiCommand(kind);
+    std::wstring executable = gui_command ? PythonGuiPath() : CliPath();
+    std::wstring args;
+    if (!executable.empty()) {
+        args = BuildPackagedArgs(kind, paths);
+    } else {
+        executable = PythonPath();
+        args = BuildPythonArgs(kind, paths);
+    }
 
     if (IsConsoleCommand(kind)) {
         std::wstring command = L"Set-Location -LiteralPath " + QuoteArg(root) +
-            L"; & " + QuoteArg(python) + L" " + args +
+            L"; & " + QuoteArg(executable) + L" " + args +
             L"; Read-Host 'Press Enter to close'";
         std::wstring ps_args = L"-NoProfile -ExecutionPolicy Bypass -NoExit -Command " + QuoteArg(command);
         HINSTANCE ret = ShellExecuteW(nullptr, L"open", L"powershell.exe", ps_args.c_str(), root.empty() ? nullptr : root.c_str(), SW_SHOWNORMAL);
         return reinterpret_cast<INT_PTR>(ret) > HINSTANCE_ERROR ? S_OK : HRESULT_FROM_WIN32(GetLastError());
     }
 
-    HINSTANCE ret = ShellExecuteW(nullptr, L"open", python.c_str(), args.c_str(), root.empty() ? nullptr : root.c_str(), SW_SHOWNORMAL);
+    HINSTANCE ret = ShellExecuteW(nullptr, L"open", executable.c_str(), args.c_str(), root.empty() ? nullptr : root.c_str(), SW_SHOWNORMAL);
     return reinterpret_cast<INT_PTR>(ret) > HINSTANCE_ERROR ? S_OK : HRESULT_FROM_WIN32(GetLastError());
 }
 
 class DewExplorerCommandBase : public RuntimeClass<RuntimeClassFlags<ClassicCom | InhibitRoOriginateError>, IExplorerCommand> {
 public:
-    explicit DewExplorerCommandBase(DewCommandKind kind, const wchar_t* title)
-        : kind_(kind), title_(title) {}
+    explicit DewExplorerCommandBase(DewCommandKind kind, const wchar_t* title, const GUID& canonical_name)
+        : kind_(kind), title_(title), canonical_name_(canonical_name) {}
 
     IFACEMETHODIMP GetTitle(IShellItemArray*, PWSTR* name) override {
         return CopyString(title_, name);
     }
 
     IFACEMETHODIMP GetIcon(IShellItemArray*, PWSTR* icon) override {
-        std::wstring root = InstallRoot();
-        if (root.empty()) {
+        std::wstring icon_path = ConfiguredIconPath();
+        if (icon_path.empty()) {
+            std::wstring root = InstallRoot();
+            icon_path = root.empty() ? L"" : JoinPath(root, L"icons\\dew-main.ico");
+        }
+        if (icon_path.empty()) {
             *icon = nullptr;
             return E_NOTIMPL;
         }
-        return CopyString(JoinPath(root, L"assets\\icons\\dew-main.ico"), icon);
+        return CopyString(icon_path, icon);
     }
 
     IFACEMETHODIMP GetToolTip(IShellItemArray*, PWSTR* info_tip) override {
@@ -275,7 +372,10 @@ public:
     }
 
     IFACEMETHODIMP GetCanonicalName(GUID* guid_command_name) override {
-        *guid_command_name = GUID_NULL;
+        if (!guid_command_name) {
+            return E_POINTER;
+        }
+        *guid_command_name = canonical_name_;
         return S_OK;
     }
 
@@ -284,7 +384,18 @@ public:
             return E_POINTER;
         }
         std::vector<std::wstring> paths = SelectionPaths(items);
-        if (paths.empty() && kind_ != DewCommandKind::DockerSaveHere && kind_ != DewCommandKind::GitCommitPush) {
+        const bool invalid_decrypt_selection = kind_ == DewCommandKind::VeraCryptDecrypt &&
+            (paths.empty() || std::any_of(paths.begin(), paths.end(), [](const std::wstring& path) {
+                if (path.size() < 3) {
+                    return true;
+                }
+                std::wstring suffix = path.substr(path.size() - 3);
+                std::transform(suffix.begin(), suffix.end(), suffix.begin(), towlower);
+                return suffix != L".hc";
+            }));
+        if (invalid_decrypt_selection) {
+            *cmd_state = ECS_HIDDEN;
+        } else if (paths.empty() && kind_ != DewCommandKind::DockerSaveHere && kind_ != DewCommandKind::GitCommitPush) {
             *cmd_state = ECS_DISABLED;
         } else {
             *cmd_state = ECS_ENABLED;
@@ -309,6 +420,7 @@ public:
 private:
     DewCommandKind kind_;
     std::wstring title_;
+    GUID canonical_name_;
 };
 
 } // namespace
@@ -319,42 +431,47 @@ extern "C" BOOL WINAPI DllMain(HINSTANCE, DWORD, LPVOID) {
 
 class __declspec(uuid("611F3291-DC8B-47D6-97C0-0D779913B5C6")) DewSnapshotCommand final : public DewExplorerCommandBase {
 public:
-    DewSnapshotCommand() : DewExplorerCommandBase(DewCommandKind::Snapshot, L"Dew Encryption") {}
+    DewSnapshotCommand() : DewExplorerCommandBase(DewCommandKind::Snapshot, L"Dew Encryption", __uuidof(DewSnapshotCommand)) {}
 };
 
 class __declspec(uuid("B7C50B51-DD33-495C-B595-28AE6E7F7CB6")) DewHistoryCommand final : public DewExplorerCommandBase {
 public:
-    DewHistoryCommand() : DewExplorerCommandBase(DewCommandKind::History, L"Dew Encryption history") {}
+    DewHistoryCommand() : DewExplorerCommandBase(DewCommandKind::History, L"Dew Encryption history", __uuidof(DewHistoryCommand)) {}
 };
 
 class __declspec(uuid("286364AE-FED7-4648-ACCC-66FF2C85B4EE")) DewWatchCommand final : public DewExplorerCommandBase {
 public:
-    DewWatchCommand() : DewExplorerCommandBase(DewCommandKind::Watch, L"Dew Encryption start file history") {}
+    DewWatchCommand() : DewExplorerCommandBase(DewCommandKind::Watch, L"Dew Encryption start file history", __uuidof(DewWatchCommand)) {}
 };
 
 class __declspec(uuid("046033C1-C212-4FDB-B7C6-3E698A56A37A")) DewQuickCreateContainerCommand final : public DewExplorerCommandBase {
 public:
-    DewQuickCreateContainerCommand() : DewExplorerCommandBase(DewCommandKind::QuickCreateContainer, L"Dew Encryption quick create container") {}
+    DewQuickCreateContainerCommand() : DewExplorerCommandBase(DewCommandKind::QuickCreateContainer, L"Dew Encryption quick create container", __uuidof(DewQuickCreateContainerCommand)) {}
 };
 
 class __declspec(uuid("05AAAB86-21D0-4D2F-9031-9C89E0DC5277")) DewVeraCryptEncryptCommand final : public DewExplorerCommandBase {
 public:
-    DewVeraCryptEncryptCommand() : DewExplorerCommandBase(DewCommandKind::VeraCryptEncrypt, L"Dew Encryption VeraCrypt encrypt") {}
+    DewVeraCryptEncryptCommand() : DewExplorerCommandBase(DewCommandKind::VeraCryptEncrypt, L"Dew Encryption VeraCrypt encrypt", __uuidof(DewVeraCryptEncryptCommand)) {}
+};
+
+class __declspec(uuid("84A8173B-7C62-4A54-988E-B8706CFEF80E")) DewVeraCryptDecryptCommand final : public DewExplorerCommandBase {
+public:
+    DewVeraCryptDecryptCommand() : DewExplorerCommandBase(DewCommandKind::VeraCryptDecrypt, L"Dew Encryption VeraCrypt decrypt", __uuidof(DewVeraCryptDecryptCommand)) {}
 };
 
 class __declspec(uuid("2A1C6932-5EBC-4E15-86F1-4F611CDC8683")) DewGitCommitPushCommand final : public DewExplorerCommandBase {
 public:
-    DewGitCommitPushCommand() : DewExplorerCommandBase(DewCommandKind::GitCommitPush, L"Dew Encryption commit and push repo") {}
+    DewGitCommitPushCommand() : DewExplorerCommandBase(DewCommandKind::GitCommitPush, L"Dew Encryption commit and push repo", __uuidof(DewGitCommitPushCommand)) {}
 };
 
 class __declspec(uuid("F9D7D759-9E6A-4729-ABDA-6AA059B3AA79")) DewDockerUploadCommand final : public DewExplorerCommandBase {
 public:
-    DewDockerUploadCommand() : DewExplorerCommandBase(DewCommandKind::DockerUpload, L"Dew Encryption upload to Docker or custom remote") {}
+    DewDockerUploadCommand() : DewExplorerCommandBase(DewCommandKind::DockerUpload, L"Dew Encryption upload to Docker or custom remote", __uuidof(DewDockerUploadCommand)) {}
 };
 
 class __declspec(uuid("427D8DDC-2DDE-4783-BDC5-8804CC0C9E34")) DewDockerSaveHereCommand final : public DewExplorerCommandBase {
 public:
-    DewDockerSaveHereCommand() : DewExplorerCommandBase(DewCommandKind::DockerSaveHere, L"Dew Encryption save Docker image here") {}
+    DewDockerSaveHereCommand() : DewExplorerCommandBase(DewCommandKind::DockerSaveHere, L"Dew Encryption save Docker image here", __uuidof(DewDockerSaveHereCommand)) {}
 };
 
 CoCreatableClass(DewSnapshotCommand)
@@ -362,6 +479,7 @@ CoCreatableClass(DewHistoryCommand)
 CoCreatableClass(DewWatchCommand)
 CoCreatableClass(DewQuickCreateContainerCommand)
 CoCreatableClass(DewVeraCryptEncryptCommand)
+CoCreatableClass(DewVeraCryptDecryptCommand)
 CoCreatableClass(DewGitCommitPushCommand)
 CoCreatableClass(DewDockerUploadCommand)
 CoCreatableClass(DewDockerSaveHereCommand)
@@ -371,6 +489,7 @@ CoCreatableClassWrlCreatorMapInclude(DewHistoryCommand)
 CoCreatableClassWrlCreatorMapInclude(DewWatchCommand)
 CoCreatableClassWrlCreatorMapInclude(DewQuickCreateContainerCommand)
 CoCreatableClassWrlCreatorMapInclude(DewVeraCryptEncryptCommand)
+CoCreatableClassWrlCreatorMapInclude(DewVeraCryptDecryptCommand)
 CoCreatableClassWrlCreatorMapInclude(DewGitCommitPushCommand)
 CoCreatableClassWrlCreatorMapInclude(DewDockerUploadCommand)
 CoCreatableClassWrlCreatorMapInclude(DewDockerSaveHereCommand)

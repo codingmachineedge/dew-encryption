@@ -50,7 +50,9 @@ jobs:
           $assets = @(
             "dist\installer\DewEncryptionSetup.exe",
             "dist\DewEncryptionPortable.zip",
-            "dist\dew-encryption.zip"
+            "dist\dew-encryption.zip",
+            "dist\context-menu\DewEncryptionExplorerCommand.dll",
+            "dist\context-menu\DewEncryption.ContextMenu.msix"
           )
 
           foreach ($asset in $assets) {
@@ -96,6 +98,8 @@ jobs:
             "dist\installer\DewEncryptionSetup.exe",
             "dist\DewEncryptionPortable.zip",
             "dist\dew-encryption.zip",
+            "dist\context-menu\DewEncryptionExplorerCommand.dll",
+            "dist\context-menu\DewEncryption.ContextMenu.msix",
             "dist\SHA256SUMS.txt"
           )
 
@@ -111,7 +115,8 @@ jobs:
             "--repo", $env:GITHUB_REPOSITORY,
             "--target", $env:GITHUB_SHA,
             "--title", $env:RELEASE_TITLE,
-            "--notes", $notes
+            "--notes", $notes,
+            "--draft=false"
           )
 
           if ($env:IS_PRERELEASE -eq "true") {

@@ -14,6 +14,8 @@ public sealed partial class MainWindow : Window
     private static readonly Regex DockerTagPattern = new("^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$");
     private static readonly Regex DockerHubReferencePattern = new(
         "^(?:docker\\.io|index\\.docker\\.io|registry-1\\.docker\\.io)/(?<user>[a-z0-9]+(?:[._-][a-z0-9]+)*)/(?<repo>[a-z0-9]+(?:[._-][a-z0-9]+)*)(?::(?<tag>[A-Za-z0-9_][A-Za-z0-9._-]{0,127}))?$");
+    private static readonly Regex GhcrReferencePattern = new(
+        "^ghcr\\.io/(?<user>[a-z0-9]+(?:[._-][a-z0-9]+)*)/(?<repo>[a-z0-9]+(?:[._-][a-z0-9]+)*)(?::(?<tag>[A-Za-z0-9_][A-Za-z0-9._-]{0,127}))?$");
 
     private readonly DewCliService cliService = new();
     private readonly DewDriveService driveService = new();
@@ -21,6 +23,7 @@ public sealed partial class MainWindow : Window
     private readonly SettingsService settingsService = new();
     private readonly DewSecretService secretService = new();
     private readonly DewStartupService startupService = new();
+    private readonly DewAutoSyncProcessService autoSyncProcessService = new();
     private readonly ObservableCollection<DewPathItem> selectedPaths = [];
     private readonly ObservableCollection<string> containers = [];
     private readonly ObservableCollection<string> driveProfiles = [];
@@ -29,6 +32,9 @@ public sealed partial class MainWindow : Window
     private readonly HashSet<string> driveSyncInProgress = new(StringComparer.OrdinalIgnoreCase);
     private readonly bool autoSyncOnLaunch;
     private readonly bool minimizedOnLaunch;
+    private int activeForegroundJobs;
+    private string activeForegroundJob = "";
+    private bool closeBlockLogged;
     private AppSettings settings;
 
     public MainWindow()
@@ -52,6 +58,7 @@ public sealed partial class MainWindow : Window
         LoadStartupState();
         Log("Ready.");
         Opened += MainWindow_Opened;
+        Closing += MainWindow_Closing;
     }
 
     private async void MainWindow_Opened(object? sender, EventArgs e)
@@ -63,7 +70,27 @@ public sealed partial class MainWindow : Window
 
         if (autoSyncOnLaunch)
         {
-            await StartSavedDriveAutoSyncProfilesAsync();
+            autoSyncProcessService.EnsureRunning();
+            Close();
+        }
+    }
+
+    private void MainWindow_Closing(object? sender, WindowClosingEventArgs e)
+    {
+        if (activeForegroundJobs <= 0 || e.CloseReason is WindowCloseReason.OSShutdown or WindowCloseReason.ApplicationShutdown)
+        {
+            return;
+        }
+
+        e.Cancel = true;
+        WindowState = WindowState.Normal;
+        Show();
+        Activate();
+        SetStatus($"Please wait - {activeForegroundJob} is still running.");
+        if (!closeBlockLogged)
+        {
+            Log($"Close blocked while {activeForegroundJob} is running. The window will be closable when the job finishes.");
+            closeBlockLogged = true;
         }
     }
 
@@ -123,7 +150,9 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        await RunAndLogAsync(cliService.RunSelectedAsync(selectedPaths.Select(item => item.Path)));
+        await RunAndLogAsync(
+            cliService.OpenArchiveEncryptionGuiAsync(selectedPaths.Select(item => item.Path)),
+            "file encryption prompt");
     }
 
     private async void OpenHelp_Click(object? sender, RoutedEventArgs e)
@@ -355,6 +384,16 @@ public sealed partial class MainWindow : Window
 
     private void UseDockerHub_Click(object? sender, RoutedEventArgs e)
     {
+        SetRegistryReference("docker.io", "Docker Hub");
+    }
+
+    private void UseGhcr_Click(object? sender, RoutedEventArgs e)
+    {
+        SetRegistryReference("ghcr.io", "GHCR");
+    }
+
+    private void SetRegistryReference(string host, string displayName)
+    {
         string user = DockerHubUserBox.Text?.Trim().ToLowerInvariant() ?? string.Empty;
         string repo = DockerHubRepoBox.Text?.Trim().ToLowerInvariant() ?? string.Empty;
         string tag = DockerHubTagBox.Text?.Trim() ?? string.Empty;
@@ -370,8 +409,8 @@ public sealed partial class MainWindow : Window
 
         if (!DockerNamespacePattern.IsMatch(user))
         {
-            SetStatus("Docker Hub username needed.");
-            Log("Enter your Docker Hub username (lowercase letters and digits, with . _ - separators) to build an upload tag.");
+            SetStatus($"{displayName} owner needed.");
+            Log($"Enter the {displayName} username or organization (lowercase letters and digits, with . _ - separators) to build an upload tag.");
             return;
         }
 
@@ -389,20 +428,26 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        string reference = $"docker.io/{user}/{repo}:{tag}";
+        string reference = $"{host}/{user}/{repo}:{tag}";
         DriveRegistryImageBox.Text = reference;
         DockerHubUserBox.Text = user;
         DockerHubRepoBox.Text = repo;
         DockerHubTagBox.Text = tag;
         DriveStatusText.Text = $"Upload tag set: {reference}";
-        SetStatus("Docker Hub tag ready.");
-        Log($"Docker Hub upload tag set: {reference}");
-        Log("Run 'docker login' once with this Docker Hub account so Push can upload.");
+        SetStatus($"{displayName} tag ready.");
+        Log($"{displayName} upload tag set: {reference}");
+        Log(host == "ghcr.io"
+            ? "Authenticate once with a GitHub token: echo $env:CR_PAT | docker login ghcr.io -u USERNAME --password-stdin"
+            : "Run 'docker login' once with this Docker Hub account so Push can upload.");
     }
 
     private void FillDockerHubHelperFromReference(string reference)
     {
         Match match = DockerHubReferencePattern.Match(reference.Trim());
+        if (!match.Success)
+        {
+            match = GhcrReferencePattern.Match(reference.Trim());
+        }
         if (!match.Success)
         {
             return;
@@ -498,29 +543,51 @@ public sealed partial class MainWindow : Window
 
     private async void StartDriveAutoSync_Click(object? sender, RoutedEventArgs e)
     {
+        DriveAutoPushBox.IsChecked = true;
         DewDriveProfile profile = SaveDriveProfileFromForm();
-        if (await StartDriveAutoSyncAsync(profile))
+        if (string.IsNullOrWhiteSpace(DriveFolder(profile)))
         {
-            DriveAutoPushBox.IsChecked = true;
+            DriveAutoPushBox.IsChecked = false;
             SaveDriveProfileFromForm();
+            SetStatus("Stream folder required.");
+            Log($"Choose a local stream folder before starting auto sync for {profile.Name}.");
+            return;
         }
+        if (string.IsNullOrWhiteSpace(DriveRegistry(profile)))
+        {
+            DriveAutoPushBox.IsChecked = false;
+            SaveDriveProfileFromForm();
+            SetStatus("Upload target required.");
+            Log("Enter an upload image tag before starting background auto sync.");
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(profile.ProtectedPassword))
+        {
+            DriveAutoPushBox.IsChecked = false;
+            SaveDriveProfileFromForm();
+            SetStatus("Saved password required.");
+            Log("Enter the profile password and keep 'Save password on profile' checked for background auto sync.");
+            return;
+        }
+        if (!await EnsureEncryptionReadyAsync(profile.EncryptionMode))
+        {
+            DriveAutoPushBox.IsChecked = false;
+            SaveDriveProfileFromForm();
+            return;
+        }
+
+        autoSyncProcessService.EnsureRunning();
+        SetStatus("Background auto sync running.");
+        Log($"Background auto sync started: {profile.Name}. You can now close this window.");
     }
 
     private void StopDriveAutoSync_Click(object? sender, RoutedEventArgs e)
     {
-        string profileName = string.IsNullOrWhiteSpace(DriveNameBox.Text) ? string.Empty : DriveNameBox.Text.Trim();
-        if (!string.IsNullOrWhiteSpace(profileName) && driveWatchers.ContainsKey(profileName))
-        {
-            StopDriveAutoSync(profileName);
-            SetStatus("Auto sync stopped.");
-            Log($"Auto sync stopped: {profileName}");
-        }
-        else
-        {
-            StopDriveAutoSync();
-            SetStatus("Auto sync stopped.");
-            Log("Auto sync stopped.");
-        }
+        DriveAutoPushBox.IsChecked = false;
+        DewDriveProfile profile = SaveDriveProfileFromForm();
+        StopDriveAutoSync(profile.Name);
+        SetStatus("Background auto sync stopped.");
+        Log($"Background auto sync disabled: {profile.Name}");
     }
 
     private void DriveStartAtLogin_Click(object? sender, RoutedEventArgs e)
@@ -636,6 +703,7 @@ public sealed partial class MainWindow : Window
         FillDockerHubHelperFromReference(DriveRegistry(profile));
         SetDriveEncryptionMode(profile.EncryptionMode);
         DriveAutoPushBox.IsChecked = profile.AutoPush;
+        DriveSavePasswordBox.IsChecked = !string.IsNullOrWhiteSpace(profile.ProtectedPassword);
         DrivePasswordBox.Text = string.Empty;
         DrivePasswordBox.Watermark = string.IsNullOrWhiteSpace(profile.ProtectedPassword) ? "Password" : "Password saved on this Windows user";
         DriveCommitBox.Text = "HEAD";
@@ -718,7 +786,11 @@ public sealed partial class MainWindow : Window
                 return;
             }
 
-            DewCommandResult? result = await RunAndLogAsync(cliService.SyncDewDriveProfileAsync(profile.Name, registryImage, push, password));
+            IProgress<string> progress = new Progress<string>(ReportSyncProgress);
+            DewCommandResult? result = await RunAndLogAsync(
+                cliService.SyncDewDriveProfileAsync(profile.Name, registryImage, push, password, outputProgress: progress),
+                push ? $"syncing and uploading {profile.Name}" : $"syncing {profile.Name}",
+                outputWasStreamed: true);
             if (result?.ExitCode == 0)
             {
                 MarkDriveProfileSynced(profile.Name);
@@ -743,7 +815,7 @@ public sealed partial class MainWindow : Window
                 return;
             }
 
-            await RunAndLogAsync(cliService.PullDewDriveAsync(registryImage, folder, password));
+            await RunAndLogAsync(cliService.PullDewDriveAsync(registryImage, folder, password, force: true));
             return;
         }
 
@@ -768,19 +840,26 @@ public sealed partial class MainWindow : Window
         Log($"Added {kind.ToLowerInvariant()}: {path}");
     }
 
-    private async Task<DewCommandResult?> RunAndLogAsync(Task<DewCommandResult> commandTask)
+    private async Task<DewCommandResult?> RunAndLogAsync(
+        Task<DewCommandResult> commandTask,
+        string description = "command",
+        bool outputWasStreamed = false)
     {
+        activeForegroundJobs++;
+        activeForegroundJob = description;
+        JobProgressPanel.IsVisible = true;
+        JobProgressText.Text = description;
         SetStatus("Running...");
         try
         {
             DewCommandResult result = await commandTask;
             Log($"> {result.FileName} {string.Join(' ', result.Arguments.Select(QuoteForLog))}");
-            if (!string.IsNullOrWhiteSpace(result.StandardOutput))
+            if (!outputWasStreamed && !string.IsNullOrWhiteSpace(result.StandardOutput))
             {
                 Log(result.StandardOutput.TrimEnd());
             }
 
-            if (!string.IsNullOrWhiteSpace(result.StandardError))
+            if (!outputWasStreamed && !string.IsNullOrWhiteSpace(result.StandardError))
             {
                 Log(result.StandardError.TrimEnd());
             }
@@ -795,6 +874,39 @@ public sealed partial class MainWindow : Window
             Log(ex.Message);
             return null;
         }
+        finally
+        {
+            activeForegroundJobs--;
+            if (activeForegroundJobs <= 0)
+            {
+                activeForegroundJobs = 0;
+                activeForegroundJob = "";
+                closeBlockLogged = false;
+                JobProgressPanel.IsVisible = false;
+                JobProgressText.Text = "Working...";
+            }
+        }
+    }
+
+    private void ReportSyncProgress(string line)
+    {
+        Log(line);
+        string phase = line switch
+        {
+            var value when value.Contains("encrypt staging:", StringComparison.OrdinalIgnoreCase) => "Encrypting staged files...",
+            var value when value.Contains("veracrypt create:", StringComparison.OrdinalIgnoreCase) => "Creating VeraCrypt payload...",
+            var value when value.Contains("image metadata keeps", StringComparison.OrdinalIgnoreCase) => "Preparing encrypted image context...",
+            var value when value.Contains("docker", StringComparison.OrdinalIgnoreCase) && value.Contains(" build ", StringComparison.OrdinalIgnoreCase) => "Building encrypted image...",
+            var value when value.Contains("docker", StringComparison.OrdinalIgnoreCase) && value.Contains(" push ", StringComparison.OrdinalIgnoreCase) => "Uploading encrypted image...",
+            var value when value.Contains("Dew Drive image:", StringComparison.OrdinalIgnoreCase) => "Finalizing sync...",
+            _ => string.Empty,
+        };
+        if (string.IsNullOrEmpty(phase))
+        {
+            return;
+        }
+        JobProgressText.Text = phase;
+        DriveStatusText.Text = phase;
     }
 
     private void RefreshContainerList()
@@ -852,8 +964,12 @@ public sealed partial class MainWindow : Window
         string registry = DriveRegistryImageBox.Text?.Trim() ?? string.Empty;
         string mode = SelectedDriveMode();
         string protectedPassword = existingProfile?.ProtectedPassword ?? string.Empty;
-        string password = DrivePasswordBox.Text?.Trim() ?? string.Empty;
-        if (!string.IsNullOrWhiteSpace(password))
+        string password = DrivePasswordBox.Text ?? string.Empty;
+        if (DriveSavePasswordBox.IsChecked != true)
+        {
+            protectedPassword = string.Empty;
+        }
+        else if (!string.IsNullOrWhiteSpace(password))
         {
             try
             {
@@ -929,7 +1045,7 @@ public sealed partial class MainWindow : Window
 
     private string GetDrivePassword(DewDriveProfile profile)
     {
-        string password = DrivePasswordBox.Text?.Trim() ?? string.Empty;
+        string password = DrivePasswordBox.Text ?? string.Empty;
         if (!string.IsNullOrWhiteSpace(password))
         {
             return password;
@@ -1028,7 +1144,11 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        DewCommandResult? result = await RunAndLogAsync(cliService.SyncDewDriveProfileAsync(profile.Name, registryImage, push, password));
+        IProgress<string> progress = new Progress<string>(ReportSyncProgress);
+        DewCommandResult? result = await RunAndLogAsync(
+            cliService.SyncDewDriveProfileAsync(profile.Name, registryImage, push, password, outputProgress: progress),
+            $"auto-syncing {profile.Name}",
+            outputWasStreamed: true);
         if (result?.ExitCode == 0)
         {
             MarkDriveProfileSynced(profile.Name);

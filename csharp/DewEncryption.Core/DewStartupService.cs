@@ -47,7 +47,7 @@ public sealed class DewStartupService
     public static string BuildStartupCommand(string? executablePath = null)
     {
         string path = string.IsNullOrWhiteSpace(executablePath) ? ResolveExecutablePath() : executablePath;
-        return $"\"{path}\" --auto-sync --minimized";
+        return $"\"{path}\" --auto-sync-worker";
     }
 
     private static string ResolveExecutablePath()
