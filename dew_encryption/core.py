@@ -971,7 +971,9 @@ def restore_dew_drive_from_registry(
     docker_run(["pull", registry_ref])
     container_id = ""
     try:
-        container_id = docker_run(["create", registry_ref]).strip()
+        # Dew Drive images are built FROM scratch with no CMD; docker create requires a
+        # command string, but it never runs, so any placeholder works.
+        container_id = docker_run(["create", registry_ref, "dew-drive-noop"]).strip()
         if not container_id:
             raise DewError("Docker did not return a temporary container id.")
         with tempfile.TemporaryDirectory(prefix="dew-drive-") as temp_dir:
@@ -1292,7 +1294,7 @@ def dew_drive_sync(
         return dew_drive_sync_folder(name_or_folder, registry_image, push=push)
 
     name = name_or_folder
-    profile_push = bool(registry_or_push) if isinstance(registry_or_push, bool) else push
+    profile_push = (registry_or_push is True) or push
     profile = find_dew_drive_profile(name)
     local_path = profile.local_path or profile.folder
     source = Path(local_path).expanduser().resolve()
