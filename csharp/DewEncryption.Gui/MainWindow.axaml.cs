@@ -315,6 +315,38 @@ public sealed partial class MainWindow : Window
         Log($"Saved Dew Drive profile: {DriveLabel(savedProfile)}");
     }
 
+    private void DeleteDrive_Click(object? sender, RoutedEventArgs e)
+    {
+        List<DewDriveProfile> profiles = (settings.DewDrives?.Drives ?? []).ToList();
+        int index = DriveProfilesList.SelectedIndex;
+        if (index < 0 || index >= profiles.Count)
+        {
+            string name = DriveNameBox.Text?.Trim() ?? string.Empty;
+            string folder = DriveFolderBox.Text?.Trim() ?? string.Empty;
+            index = string.IsNullOrWhiteSpace(name) && string.IsNullOrWhiteSpace(folder)
+                ? -1
+                : FindDriveProfileIndex(profiles, name, folder);
+        }
+
+        if (index < 0 || index >= profiles.Count)
+        {
+            SetStatus("No profile selected.");
+            Log("Select a saved Dew Drive profile before deleting.");
+            return;
+        }
+
+        DewDriveProfile removed = profiles[index];
+        profiles.RemoveAt(index);
+        StopDriveAutoSync(removed.Name);
+        DewDriveSettings current = settings.DewDrives ?? new DewDriveSettings(Drives: []);
+        settings = settings with { DewDrives = current with { Drives = profiles } };
+        settingsService.Save(settings);
+        RefreshDriveList();
+        DriveStatusText.Text = $"Deleted: {DriveLabel(removed)}";
+        SetStatus("Dew Drive profile deleted.");
+        Log($"Deleted Dew Drive profile: {DriveLabel(removed)} (local folder kept on disk)");
+    }
+
     private async void PickDriveFolder_Click(object? sender, RoutedEventArgs e)
     {
         IReadOnlyList<IStorageFolder> folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
@@ -540,7 +572,9 @@ public sealed partial class MainWindow : Window
         DrivePasswordBox.Text = string.Empty;
         DrivePasswordBox.Watermark = string.IsNullOrWhiteSpace(profile.ProtectedPassword) ? "Password" : "Password saved on this Windows user";
         DriveCommitBox.Text = "HEAD";
-        DriveStatusText.Text = DriveLabel(profile);
+        DriveStatusText.Text = string.IsNullOrWhiteSpace(profile.LastSync)
+            ? $"{DriveLabel(profile)} (never synced)"
+            : $"{DriveLabel(profile)} (last sync {profile.LastSync})";
     }
 
     private void AppendDriveItems(IEnumerable<string> paths)
@@ -617,7 +651,12 @@ public sealed partial class MainWindow : Window
                 return;
             }
 
-            await RunAndLogAsync(cliService.SyncDewDriveProfileAsync(profile.Name, registryImage, push, password));
+            DewCommandResult? result = await RunAndLogAsync(cliService.SyncDewDriveProfileAsync(profile.Name, registryImage, push, password));
+            if (result?.ExitCode == 0)
+            {
+                MarkDriveProfileSynced(profile.Name);
+            }
+
             return;
         }
 
@@ -774,9 +813,10 @@ public sealed partial class MainWindow : Window
             RegistryRef: registry,
             RegistryImage: registry,
             EncryptionMode: mode,
+            LastSync: existingProfile?.LastSync ?? string.Empty,
             AutoPush: DriveAutoPushBox.IsChecked == true,
-            IncludePatterns: [],
-            ExcludePatterns: [],
+            IncludePatterns: existingProfile?.IncludePatterns ?? [],
+            ExcludePatterns: existingProfile?.ExcludePatterns ?? [],
             ProtectedPassword: protectedPassword);
     }
 
@@ -921,7 +961,29 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        await RunAndLogAsync(cliService.SyncDewDriveProfileAsync(profile.Name, registryImage, push, password));
+        DewCommandResult? result = await RunAndLogAsync(cliService.SyncDewDriveProfileAsync(profile.Name, registryImage, push, password));
+        if (result?.ExitCode == 0)
+        {
+            MarkDriveProfileSynced(profile.Name);
+        }
+    }
+
+    private void MarkDriveProfileSynced(string profileName)
+    {
+        List<DewDriveProfile> profiles = (settings.DewDrives?.Drives ?? []).ToList();
+        int index = profiles.FindIndex(item => string.Equals(item.Name, profileName, StringComparison.OrdinalIgnoreCase));
+        if (index < 0)
+        {
+            return;
+        }
+
+        string stamp = DateTime.Now.ToString("yyyy-MM-dd HH:mm");
+        profiles[index] = profiles[index] with { LastSync = stamp };
+        DewDriveSettings current = settings.DewDrives ?? new DewDriveSettings(Drives: []);
+        settings = settings with { DewDrives = current with { Drives = profiles } };
+        settingsService.Save(settings);
+        RefreshDriveList();
+        DriveStatusText.Text = $"{profileName}: last sync {stamp}";
     }
 
     private void StopDriveAutoSync(string? profileName = null)

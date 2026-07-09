@@ -267,6 +267,8 @@ The C# GUI `Dew Drive` tab is the OneDrive-style workflow:
 4. Save your VeraCrypt settings or use `Install VeraCrypt`.
 5. Use `Auto Sync` to watch local file changes, encrypt the folder, build the Docker image, and push it.
 6. Enable `Startup` and mark profiles with `Auto push` to resume the watcher when this Windows user signs in.
+7. Select a saved profile to see when it last synced; every successful sync updates the stored timestamp.
+8. Use `Delete` to remove a saved profile and stop its watcher. The local stream folder stays on disk.
 
 CLI passwords are passed to the sync process through `DEW_DRIVE_PASSWORD`. In the C# GUI, an entered Dew Drive password is stored as a Windows current-user protected secret so startup auto-sync can continue on the same machine. The local folder is still a normal folder on disk; remote storage is the encrypted payload inside the Docker/OCI image.
 

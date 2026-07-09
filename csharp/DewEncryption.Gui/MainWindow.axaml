@@ -111,6 +111,7 @@
               </UniformGrid>
               <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,6,0,12">
                 <Button Content="Save Profile" Classes="primary" Click="NewDrive_Click" />
+                <Button Content="Delete" Classes="outline" Click="DeleteDrive_Click" />
                 <Button Content="Pick Folder" Classes="secondary" Click="PickDriveFolder_Click" />
                 <Button Content="Add Files" Classes="outline" Click="AddDriveFiles_Click" />
                 <Button Content="Add Folder" Classes="outline" Click="AddDriveFolder_Click" />

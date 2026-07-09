@@ -28,6 +28,6 @@ The Docker build restores and compiles both the .NET Core library and Avalonia G
 
 - Files tab: add files/folders, snapshot archives, and refresh the selected item's Git-backed history.
 - Containers tab: save container profiles to the shared settings file, snapshot container file history, and test open/close hooks through core library helpers.
-- Dew Drive tab: save stream-folder profiles, label the upload image tag clearly, apply VeraCrypt settings, install VeraCrypt with winget, encrypt to Docker/OCI images, pull remote payloads, restore local history commits, and auto-sync changed files after a short debounce or at Windows login.
+- Dew Drive tab: save or delete stream-folder profiles, label the upload image tag clearly, apply VeraCrypt settings, install VeraCrypt with winget, encrypt to Docker/OCI images, pull remote payloads, restore local history commits, auto-sync changed files after a short debounce or at Windows login, and record each profile's last successful sync time.
 
 The C# GUI is deliberately a shell over the mature CLI so Windows and Linux behavior stays aligned with the existing automation while reusable .NET app functionality lives in `DewEncryption.Core`.
