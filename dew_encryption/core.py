@@ -28,6 +28,7 @@ ARCHIVE_DIR_NAME = "Dew Encryption Archives"
 VERACRYPT_EXT = ".dew.hc"
 DEW_DRIVE_PAYLOAD_NAME = "payload.enc"
 DEW_DRIVE_METADATA_NAME = "metadata.json"
+DEW_DRIVE_PRIVATE_METADATA_NAME = ".dew-drive-metadata.json"
 
 
 def app_base_dir() -> Path:
@@ -995,6 +996,16 @@ def restore_dew_drive_from_registry(
                 restored = decrypt_dew_drive_payload(payload, password, restore_target, metadata)
             except DewError as exc:
                 raise DewError(f"Decryption failed: {exc}") from exc
+            private_metadata_path = restored / DEW_DRIVE_PRIVATE_METADATA_NAME if restored.is_dir() else None
+            if private_metadata_path is not None and private_metadata_path.exists():
+                try:
+                    private_metadata = json.loads(private_metadata_path.read_text(encoding="utf-8"))
+                except json.JSONDecodeError as exc:
+                    raise DewError("Encrypted drive metadata is not valid JSON.") from exc
+                if isinstance(private_metadata, dict):
+                    metadata = {**metadata, **private_metadata}
+                    log_step("validated against manifest from inside the encrypted payload")
+                private_metadata_path.unlink()
             warnings = validate_restored_files(restored, metadata)
             output.parent.mkdir(parents=True, exist_ok=True)
             if output_exists:
@@ -1315,8 +1326,10 @@ def dew_drive_sync(
         encrypted = Path(encrypted_dir)
         build_context = Path(build_dir)
         manifest = copy_dew_drive_selection(source, staging, profile)
-        payload = encrypt_dew_drive_staging(staging, encrypted, password, profile.encryption_mode)
-        metadata = {
+        # Everything sensitive (drive name, source path, per-file manifest) rides inside the
+        # encrypted payload; the image-level metadata.json stays minimal because registries
+        # can be public.
+        private_metadata = {
             "drive_name": profile.name,
             "timestamp": dt.datetime.now(dt.timezone.utc).isoformat(),
             "source_platform": platform.platform(),
@@ -1325,6 +1338,15 @@ def dew_drive_sync(
             "source": str(source),
             "manifest": manifest,
         }
+        (staging / DEW_DRIVE_PRIVATE_METADATA_NAME).write_text(json.dumps(private_metadata, indent=2), encoding="utf-8")
+        payload = encrypt_dew_drive_staging(staging, encrypted, password, profile.encryption_mode)
+        metadata = {
+            "format": "dew-drive/2",
+            "encryption_mode": profile.encryption_mode,
+            "app_version": app_version(),
+            "payload": payload.name,
+        }
+        log_step("image metadata keeps only encryption mode and payload name; manifest and source stay inside the encrypted payload")
         metadata_path = write_dew_drive_image_context(payload, metadata, build_context)
         assert_no_plaintext_in_build_context(build_context)
         docker = find_executable("docker")

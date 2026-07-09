@@ -273,6 +273,8 @@ The C# GUI `Dew Drive` tab is the OneDrive-style workflow:
 
 CLI passwords are passed to the sync process through `DEW_DRIVE_PASSWORD`. In the C# GUI, an entered Dew Drive password is stored as a Windows current-user protected secret so startup auto-sync can continue on the same machine. The local folder is still a normal folder on disk; remote storage is the encrypted payload inside the Docker/OCI image.
 
+The image-level `metadata.json` contains only the encryption mode and payload file name. The drive name, source path, and per-file manifest (names, sizes, hashes) ride inside the encrypted payload, so a public registry learns nothing about your files. Images pushed by older versions, which carried a plaintext manifest, still pull and restore normally.
+
 ## Container Manager, Themes, And Hooks
 
 The `Containers` GUI tab stores settings per encrypted container:
