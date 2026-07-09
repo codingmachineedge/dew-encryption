@@ -1,5 +1,13 @@
 # Code Logic Handoff: Installer and Integration Flow
 
+## Full Windows installer flow
+
+1. `PrepareToInstall` detects Git, 7-Zip, and VeraCrypt through `PATH` and standard install locations.
+2. If anything is missing, the installer extracts `install-dependencies.ps1` and runs it once with normal UAC elevation.
+3. The helper tries winget first and falls back to pinned, SHA-256-verified vendor installers, then verifies every executable and fails setup if the machine remains incomplete.
+4. Setup installs the bundled Python CLI, self-contained C# GUI, and Python history GUI.
+5. Start Menu, postinstall launch, and optional startup use the C# GUI; specialized history verbs use the Python fallback.
+
 ## Windows context menu flow
 
 1. `install-context-menu.ps1` computes project root and Python executable.

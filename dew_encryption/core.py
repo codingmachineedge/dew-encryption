@@ -271,7 +271,14 @@ def find_executable(name: str, fallbacks: list[Path] | None = None) -> Path:
     found = shutil.which(name)
     if found:
         return Path(found)
-    for candidate in fallbacks or []:
+    candidates = list(fallbacks or [])
+    if os.name == "nt" and name.lower() in {"git", "git.exe"}:
+        candidates.extend([
+            Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "Git" / "cmd" / "git.exe",
+            Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)")) / "Git" / "cmd" / "git.exe",
+            Path(os.environ.get("LOCALAPPDATA", str(Path.home() / "AppData/Local"))) / "Programs" / "Git" / "cmd" / "git.exe",
+        ])
+    for candidate in candidates:
         if candidate.exists():
             return candidate
     raise DewError(f"Required executable not found: {name}")

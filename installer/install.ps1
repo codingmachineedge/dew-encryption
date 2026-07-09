@@ -16,9 +16,9 @@ function Install-WingetPackage($Id) {
         return
     }
     if (-not (Test-Command winget)) {
-        throw "winget is not available. Install Python 3.10+, Git, and 7-Zip manually, then rerun with -SkipWinget."
+        throw "winget is not available. Install Python 3.10+, Git, 7-Zip, and VeraCrypt manually, then rerun with -SkipWinget."
     }
-    winget install -e --id $Id --silent --accept-source-agreements --accept-package-agreements
+    winget install -e --id $Id --source winget --silent --accept-source-agreements --accept-package-agreements --disable-interactivity
 }
 
 if (-not (Test-Command python)) {
@@ -59,7 +59,7 @@ if (-not (Test-Command 7z)) {
     throw "7-Zip is still not available after dependency installation."
 }
 if (-not (Test-Command VeraCrypt)) {
-    Write-Warning "VeraCrypt is not available. Git/7-Zip actions will work, but VeraCrypt encrypt/decrypt needs VeraCrypt installed."
+    throw "VeraCrypt is still not available after dependency installation."
 }
 
 New-Item -ItemType Directory -Path $InstallRoot -Force | Out-Null

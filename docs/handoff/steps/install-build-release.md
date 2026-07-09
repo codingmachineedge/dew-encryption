@@ -10,9 +10,11 @@
 ## Windows automated/full installer
 
 1. Use `installer/install.ps1` for automated local install.
-2. Use `scripts/build-windows-installer.ps1` to build the Inno Setup installer.
-3. Every branch push runs the installer workflow and publishes a commit-specific GitHub prerelease with installer and checksum release assets.
-4. Use the release workflow for manual builds and tagged release artifacts.
+2. Use `scripts/build-windows-installer.ps1` to build the Python CLI/history GUI, self-contained C# default GUI, and Inno Setup installer.
+3. Verify setup automatically installs missing Git, 7-Zip, and VeraCrypt before it copies the app or registers integrations.
+4. Verify Start Menu, postinstall launch, and startup use the C# GUI while history-manager verbs use the Python fallback.
+5. Every branch push runs the installer workflow and publishes a commit-specific GitHub prerelease with installer and checksum release assets.
+6. Use the release workflow for manual builds and tagged release artifacts.
 
 ## Linux install
 

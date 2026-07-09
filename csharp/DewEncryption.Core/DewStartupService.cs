@@ -57,7 +57,7 @@ public sealed class DewStartupService
             return Environment.ProcessPath;
         }
 
-        string executableName = OperatingSystem.IsWindows() ? "DewEncryption.Gui.exe" : "DewEncryption.Gui";
+        string executableName = OperatingSystem.IsWindows() ? "dew-encryption-gui.exe" : "DewEncryption.Gui";
         return Path.Combine(AppContext.BaseDirectory, executableName);
     }
 }

@@ -17,20 +17,22 @@ It also includes a modern GUI file manager for selecting files, managing file hi
 ## Requirements
 
 - Windows 10 or later, or Linux with a desktop session
-- Python 3.10+
 - Git
-- 7-Zip with `7z` available on `PATH`
-- VeraCrypt for VeraCrypt container encrypt/decrypt actions
+- 7-Zip
+- VeraCrypt
+- Python 3.10+ for source and Linux installs
+
+The x64 Windows `.exe` installer bundles the Python CLI and self-contained C# GUI. It automatically installs missing Git, 7-Zip, and VeraCrypt components with `winget` or hash-verified vendor packages when `winget` is unavailable; Windows may display one normal administrator approval prompt for those system dependencies.
 
 ## Windows Install
 
-Fully automated install, including dependencies when `winget` is available:
+Fully automated source install, including dependencies when `winget` is available:
 
 ```powershell
 irm https://raw.githubusercontent.com/codingmachineedge/dew-encryption/main/installer/install.ps1 | iex
 ```
 
-That command installs or verifies Python, Git, and 7-Zip, clones this repo into `%LOCALAPPDATA%\DewEncryption`, installs the Python package, and registers the Explorer context menu.
+That command installs or verifies Python, Git, 7-Zip, and VeraCrypt, clones this repo into `%LOCALAPPDATA%\DewEncryption`, installs the Python package, and registers the Explorer context menu.
 
 Manual install:
 
@@ -72,13 +74,13 @@ Full Windows `.exe` installer:
 .\scripts\build-windows-installer.ps1
 ```
 
-Every branch push runs `.github/workflows/installer.yml`, creates a commit-specific GitHub prerelease, and attaches the SHA-named installer plus its SHA-256 checksum as release assets. The installer uses Inno Setup and installs CLI and GUI executables, Start Menu entries, app icons, and Explorer right-click actions.
+Every branch push runs `.github/workflows/installer.yml`, creates a commit-specific GitHub prerelease, and attaches the SHA-named installer plus its SHA-256 checksum as release assets. The installer configures the self-contained C# Avalonia GUI as the default, bundles the Python CLI and history GUI, installs missing Git/7-Zip/VeraCrypt dependencies, and registers Start Menu, startup, icon, and Explorer integrations.
 
 Portable Windows build:
 
 - Download `DewEncryptionPortable.zip` from the release workflow artifacts or tagged releases.
 - Extract it anywhere.
-- Run `dew-encryption-gui.exe` for GUI mode or `dew-encryption.exe --help` for CLI mode.
+- Run `dew-encryption-gui.exe` for the default C# GUI or `dew-encryption.exe --help` for CLI mode.
 - Settings are stored in `settings.json` beside the portable executables because the zip includes `portable.flag`.
 
 To turn any local checkout or executable folder into portable mode:
@@ -139,16 +141,16 @@ On Linux, use normal POSIX paths with the same commands.
 
 ## Full GUI Mode
 
-Available on Windows and Linux. The current packaged GUI is Python/Tkinter, and a C# Avalonia GUI target is available under `csharp/DewEncryption.Gui` for the native cross-platform GUI goal:
+The full Windows installer and portable bundle use the self-contained C# Avalonia application as `dew-encryption-gui.exe`. Source and Linux installs continue to expose the Python/Tkinter GUI through the `dew-encryption-gui` command:
 
 ```powershell
 dew-encryption-gui
 ```
 
-Open directly to a folder's history manager:
+The packaged Python history manager remains available as `dew-encryption-python-gui.exe`. Open it directly to a folder's history manager with:
 
 ```powershell
-dew-encryption-gui C:\Path\To\Folder --history
+dew-encryption-python-gui.exe C:\Path\To\Folder --history
 ```
 
 
@@ -179,9 +181,9 @@ When the manager starts:
 
 The generated manager requires Python, Git, and 7-Zip on the target machine. Keep the password private; the source payload is encrypted, but the build and run commands are stored in the manager file so the GUI can operate without extra configuration.
 
-## C# GUI Target
+## C# GUI
 
-The `csharp/DewEncryption.Gui` project is an Avalonia/.NET 8 desktop shell for Windows and Linux. It uses Material Design (Material.Avalonia theme, cards, floating-label fields, and Material icons) with a teal palette, and it drives the existing `dew-encryption` CLI so the C# interface can share the mature encryption, Git history, VeraCrypt, and hook workflows while the native UI is expanded. Rarely-needed VeraCrypt internals sit behind an "Advanced VeraCrypt settings" expander so the common sync flow stays simple.
+The `csharp/DewEncryption.Gui` project is the default GUI in packaged Windows installs. It is published as a self-contained Windows x64 Avalonia application, uses Material Design with a teal palette, and drives the bundled `dew-encryption.exe` CLI for encryption, Git history, VeraCrypt, and hook workflows. Rarely-needed VeraCrypt internals sit behind an "Advanced VeraCrypt settings" expander so the common sync flow stays simple.
 
 ```bash
 dotnet restore csharp/DewEncryption.Gui/DewEncryption.Gui.csproj
@@ -198,7 +200,7 @@ The page is deployed by `.github/workflows/pages.yml` from the `docs/` folder.
 
 ## GitHub Actions
 
-- `.github/workflows/ci.yml` compiles the package, parses installer scripts, installs 7-Zip, and runs a real snapshot smoke test on Windows.
+- `.github/workflows/ci.yml` builds the Python and C# applications, parses installer scripts, installs 7-Zip, and runs a real snapshot smoke test on Windows.
 - `.github/workflows/installer.yml` builds a Windows installer and publishes it directly as a commit-specific GitHub prerelease asset on every branch push.
 - `.github/workflows/release.yml` builds a zip bundle on tag pushes like `v0.1.0` or manual workflow runs.
 - `.github/workflows/pages.yml` deploys `docs/` to GitHub Pages.
@@ -233,15 +235,15 @@ Files and folders also get VeraCrypt container actions:
 - `dew encryption VeraCrypt encrypt` creates a `.dew.hc` VeraCrypt container, copies each selected file or folder into its own container, dismounts the container, and removes the original by default.
 - `.hc` files get `dew encryption VeraCrypt decrypt`, which can decrypt one or more selected containers and restores their contents beside them.
 
-These actions prompt for the VeraCrypt password in a console window. The automated PowerShell installer installs VeraCrypt with `winget` when it is missing; the full Windows installer includes the same VeraCrypt dependency task by default.
+These actions prompt for the VeraCrypt password in a console window. Both Windows install paths automatically install VeraCrypt with `winget` when it is missing; the full Windows installer also has a hash-verified direct fallback. It treats Git, 7-Zip, and VeraCrypt as required and stops with an actionable error instead of leaving a partial installation.
 
 ## Use The GUI
 
 ```powershell
-dew-encryption-gui
+dew-encryption-gui.exe
 ```
 
-or:
+That command launches the C# Avalonia GUI in a packaged Windows install. For the Python GUI used by source/Linux installs and the packaged history fallback:
 
 ```powershell
 python -m dew_encryption.gui

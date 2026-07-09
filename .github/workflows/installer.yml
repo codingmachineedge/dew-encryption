@@ -25,6 +25,11 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Set up .NET
+        uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          dotnet-version: "8.0.x"
+
       - name: Build Windows installer
         shell: pwsh
         run: |
@@ -38,6 +43,8 @@ jobs:
           $expectedFiles = @(
             "dist\app\dew-encryption.exe",
             "dist\app\dew-encryption-gui.exe",
+            "dist\app\dew-encryption-python-gui.exe",
+            "dist\csharp-gui\DewEncryption.Gui.exe",
             "dist\installer\DewEncryptionSetup.exe"
           )
 
@@ -53,6 +60,25 @@ jobs:
           & .\dist\app\dew-encryption.exe --help | Out-Null
           if ($LASTEXITCODE -ne 0) {
             throw "Packaged CLI smoke test failed with exit code $LASTEXITCODE."
+          }
+
+          $installedGuiHash = (Get-FileHash -LiteralPath .\dist\app\dew-encryption-gui.exe -Algorithm SHA256).Hash
+          $publishedGuiHash = (Get-FileHash -LiteralPath .\dist\csharp-gui\DewEncryption.Gui.exe -Algorithm SHA256).Hash
+          if ($installedGuiHash -ne $publishedGuiHash) {
+            throw "The default GUI is not the published C# Avalonia executable."
+          }
+
+          $guiProcess = Start-Process -FilePath .\dist\app\dew-encryption-gui.exe -ArgumentList "--minimized" -WindowStyle Hidden -PassThru
+          try {
+            Start-Sleep -Seconds 5
+            if ($guiProcess.HasExited) {
+              throw "Packaged C# GUI exited during its launch smoke test with code $($guiProcess.ExitCode)."
+            }
+          }
+          finally {
+            if (-not $guiProcess.HasExited) {
+              Stop-Process -Id $guiProcess.Id -Force
+            }
           }
 
           $shortSha = $env:GITHUB_SHA.Substring(0, 12)

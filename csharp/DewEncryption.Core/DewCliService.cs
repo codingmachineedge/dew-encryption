@@ -8,10 +8,10 @@ public sealed class DewCliService
     public string CliFileName { get; }
     public string HistoryGuiFileName { get; }
 
-    public DewCliService(string cliFileName = "dew-encryption", string historyGuiFileName = "dew-encryption-gui")
+    public DewCliService(string cliFileName = "dew-encryption", string historyGuiFileName = "dew-encryption-python-gui")
     {
-        CliFileName = cliFileName;
-        HistoryGuiFileName = historyGuiFileName;
+        CliFileName = ResolveBundledExecutable(cliFileName);
+        HistoryGuiFileName = ResolveBundledExecutable(historyGuiFileName);
     }
 
     public Task<DewCommandResult> RunHelpAsync(CancellationToken cancellationToken = default)
@@ -174,6 +174,20 @@ public sealed class DewCliService
     private static IReadOnlyDictionary<string, string>? PasswordEnvironment(string? password)
     {
         return string.IsNullOrWhiteSpace(password) ? null : new Dictionary<string, string> { ["DEW_DRIVE_PASSWORD"] = password };
+    }
+
+    private static string ResolveBundledExecutable(string fileName)
+    {
+        if (Path.IsPathFullyQualified(fileName))
+        {
+            return fileName;
+        }
+
+        string executableName = OperatingSystem.IsWindows() && !fileName.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+            ? fileName + ".exe"
+            : fileName;
+        string bundledPath = Path.Combine(AppContext.BaseDirectory, executableName);
+        return File.Exists(bundledPath) ? bundledPath : fileName;
     }
 
     private static bool IsFileNotFound(Win32Exception exception)

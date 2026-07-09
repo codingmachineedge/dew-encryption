@@ -1,5 +1,7 @@
 param(
-    [string]$Python = "python"
+    [string]$GuiExecutable = "dew-encryption-gui",
+    [string]$CliExecutable = "dew-encryption",
+    [string]$Python = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -7,29 +9,49 @@ $ErrorActionPreference = "Stop"
 $principal = New-ScheduledTaskPrincipal -UserId $env:USERNAME -LogonType Interactive -RunLevel Highest
 $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Hours 12)
 
+if ($Python) {
+    # Retain source-checkout support for install-context-menu.ps1, where the
+    # package is intentionally launched as Python modules.
+    $guiTaskExecutable = $Python
+    $guiTaskArguments = "-m dew_encryption.gui"
+    $cliTaskExecutable = $Python
+    $cliTaskArgumentPrefix = "-m dew_encryption "
+} else {
+    # The packaged installer supplies two standalone executables. The Avalonia
+    # executable is the default GUI and CLI arguments go directly to the CLI.
+    $guiTaskExecutable = $GuiExecutable
+    $guiTaskArguments = ""
+    $cliTaskExecutable = $CliExecutable
+    $cliTaskArgumentPrefix = ""
+}
+
 $tasks = @(
     @{
         Name = "DewEncryption.GUI.Elevated"
         Description = "Launch Dew Encryption GUI with normal Windows administrator approval."
-        Execute = $Python
-        Argument = "-m dew_encryption.gui"
+        Execute = $guiTaskExecutable
+        Argument = $guiTaskArguments
     },
     @{
         Name = "DewEncryption.CLI.Help.Elevated"
         Description = "Launch Dew Encryption CLI help with normal Windows administrator approval."
-        Execute = $Python
-        Argument = "-m dew_encryption --help"
+        Execute = $cliTaskExecutable
+        Argument = "${cliTaskArgumentPrefix}--help"
     },
     @{
         Name = "DewEncryption.VeraCrypt.Settings.Elevated"
         Description = "Show Dew Encryption VeraCrypt settings with normal Windows administrator approval."
-        Execute = $Python
-        Argument = "-m dew_encryption veracrypt-settings --show"
+        Execute = $cliTaskExecutable
+        Argument = "${cliTaskArgumentPrefix}veracrypt-settings --show"
     }
 )
 
 foreach ($task in $tasks) {
-    $action = New-ScheduledTaskAction -Execute $task.Execute -Argument $task.Argument
+    $actionParameters = @{ Execute = $task.Execute }
+    if ($task.Argument) {
+        $actionParameters.Argument = $task.Argument
+    }
+    $action = New-ScheduledTaskAction @actionParameters
     Register-ScheduledTask `
         -TaskName $task.Name `
         -Action $action `

@@ -13,6 +13,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          dotnet-version: "8.0.x"
       - name: Install dependencies
         run: |
           choco install 7zip -y
@@ -20,6 +23,8 @@ jobs:
           python -m pip install -e .
       - name: Compile package
         run: python -m compileall dew_encryption
+      - name: Build C# GUI
+        run: dotnet build csharp/DewEncryption.sln --configuration Release
       - name: Parse installer scripts
         shell: pwsh
         run: |
@@ -29,6 +34,10 @@ jobs:
           [System.Management.Automation.PSParser]::Tokenize((Get-Content .\installer\install-context-menu.ps1 -Raw), [ref]$err) | Out-Null
           if ($err) { throw $err }
           [System.Management.Automation.PSParser]::Tokenize((Get-Content .\installer\uninstall-context-menu.ps1 -Raw), [ref]$err) | Out-Null
+          if ($err) { throw $err }
+          [System.Management.Automation.PSParser]::Tokenize((Get-Content .\installer\install-dependencies.ps1 -Raw), [ref]$err) | Out-Null
+          if ($err) { throw $err }
+          [System.Management.Automation.PSParser]::Tokenize((Get-Content .\scripts\build-windows-installer.ps1 -Raw), [ref]$err) | Out-Null
           if ($err) { throw $err }
       - name: Smoke test snapshot
         shell: pwsh
