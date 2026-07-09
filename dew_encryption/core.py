@@ -29,6 +29,7 @@ VERACRYPT_EXT = ".dew.hc"
 DEW_DRIVE_PAYLOAD_NAME = "payload.enc"
 DEW_DRIVE_METADATA_NAME = "metadata.json"
 DEW_DRIVE_PRIVATE_METADATA_NAME = ".dew-drive-metadata.json"
+DEW_DRIVE_METADATA_FORMAT = "dew-drive/2"
 
 
 def app_base_dir() -> Path:
@@ -959,6 +960,31 @@ def decrypt_dew_drive_payload(payload: Path, password: str, output: Path, metada
     return output
 
 
+def pop_embedded_dew_drive_metadata(restored: Path) -> dict | None:
+    """Read and remove the private metadata file a new-format payload carries at its root.
+
+    Detection is deliberately conservative: a user file that merely shares the reserved name
+    (possible in images synced before the manifest moved inside the payload) is left in place
+    untouched so those images keep restoring byte-for-byte. The manifest-key fallback accepts
+    embedded metadata written before the format marker existed.
+    """
+    if not restored.is_dir():
+        return None
+    path = restored / DEW_DRIVE_PRIVATE_METADATA_NAME
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    if data.get("format") != DEW_DRIVE_METADATA_FORMAT and "manifest" not in data:
+        return None
+    path.unlink()
+    return data
+
+
 def restore_dew_drive_from_registry(
     registry_ref: str,
     output: Path,
@@ -996,16 +1022,10 @@ def restore_dew_drive_from_registry(
                 restored = decrypt_dew_drive_payload(payload, password, restore_target, metadata)
             except DewError as exc:
                 raise DewError(f"Decryption failed: {exc}") from exc
-            private_metadata_path = restored / DEW_DRIVE_PRIVATE_METADATA_NAME if restored.is_dir() else None
-            if private_metadata_path is not None and private_metadata_path.exists():
-                try:
-                    private_metadata = json.loads(private_metadata_path.read_text(encoding="utf-8"))
-                except json.JSONDecodeError as exc:
-                    raise DewError("Encrypted drive metadata is not valid JSON.") from exc
-                if isinstance(private_metadata, dict):
-                    metadata = {**metadata, **private_metadata}
-                    log_step("validated against manifest from inside the encrypted payload")
-                private_metadata_path.unlink()
+            embedded = pop_embedded_dew_drive_metadata(restored)
+            if embedded:
+                metadata = {**metadata, **embedded}
+                log_step("validating against manifest from inside the encrypted payload")
             warnings = validate_restored_files(restored, metadata)
             output.parent.mkdir(parents=True, exist_ok=True)
             if output_exists:
@@ -1186,6 +1206,11 @@ def copy_dew_drive_selection(source: Path, staging: Path, profile: DewDriveProfi
     manifest: list[dict[str, object]] = []
     for source_file in files:
         relative = source_file.relative_to(base)
+        if relative.as_posix() == DEW_DRIVE_PRIVATE_METADATA_NAME:
+            # Reserved root-level name, e.g. residue from a restore done by an older app version;
+            # the sync writes its own copy there before encrypting.
+            log_step(f"skipping reserved file at drive root: {relative.as_posix()}")
+            continue
         target = staging / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source_file, target)
@@ -1196,6 +1221,8 @@ def copy_dew_drive_selection(source: Path, staging: Path, profile: DewDriveProfi
             "mtime": dt.datetime.fromtimestamp(stat.st_mtime, dt.timezone.utc).isoformat(),
             "sha256": sha256_file(source_file),
         })
+    if not manifest:
+        raise DewError(f"No files matched Dew Drive profile: {profile.name}")
     return manifest
 
 
@@ -1330,6 +1357,7 @@ def dew_drive_sync(
         # encrypted payload; the image-level metadata.json stays minimal because registries
         # can be public.
         private_metadata = {
+            "format": DEW_DRIVE_METADATA_FORMAT,
             "drive_name": profile.name,
             "timestamp": dt.datetime.now(dt.timezone.utc).isoformat(),
             "source_platform": platform.platform(),
@@ -1341,9 +1369,8 @@ def dew_drive_sync(
         (staging / DEW_DRIVE_PRIVATE_METADATA_NAME).write_text(json.dumps(private_metadata, indent=2), encoding="utf-8")
         payload = encrypt_dew_drive_staging(staging, encrypted, password, profile.encryption_mode)
         metadata = {
-            "format": "dew-drive/2",
+            "format": DEW_DRIVE_METADATA_FORMAT,
             "encryption_mode": profile.encryption_mode,
-            "app_version": app_version(),
             "payload": payload.name,
         }
         log_step("image metadata keeps only encryption mode and payload name; manifest and source stay inside the encrypted payload")
