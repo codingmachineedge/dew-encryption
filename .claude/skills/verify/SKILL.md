@@ -56,3 +56,18 @@ returned by `launch_on_headless_desktop`, `Stop-Process` it, then `close_headles
 - The "Startup" checkbox reflects the real HKCU Run registry key even with a scratch config —
   don't toggle it during tests (it writes the user's registry).
 - `RefreshDriveList()` reloads settings from disk and resets list selection.
+
+## VeraCrypt testing gotchas
+
+- **Git Bash mangles `/switch` args** (MSYS path conversion) — any direct VeraCrypt/Format run from
+  Bash needs `export MSYS2_ARG_CONV_EXCL='*'` or the exe receives garbage and silently no-ops with
+  exit 0. Python `subprocess` and the headless launcher pass args verbatim (no mangling).
+- Creation uses `"VeraCrypt Format.exe"`; mount/dismount use `VeraCrypt.exe`. Format rejects the
+  VeraCrypt.exe-only `/quit` switch ("Error while parsing command line."), and under `/silent` that
+  suppressed dialog hangs the process forever.
+- VeraCrypt error dialogs render black via PrintWindow; read their text with `list_child_windows`
+  (the Static control holds the message).
+- `/silent` auto-accepts the short-password (<20 chars) warning; without `/silent` it blocks on a
+  Yes/No prompt. exFAT file containers create fine without elevation.
+- Kill stray `VeraCrypt Format` processes between experiments — a lingering instance makes new
+  launches exit 0 instantly without doing anything.

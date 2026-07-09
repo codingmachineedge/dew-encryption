@@ -204,6 +204,7 @@ public sealed class DewCliService
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
+            CreateNoWindow = true,
         };
         if (!string.IsNullOrWhiteSpace(workingDirectory))
         {

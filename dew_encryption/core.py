@@ -296,6 +296,22 @@ def find_veracrypt() -> Path:
     raise DewError("VeraCrypt was not found. Install VeraCrypt and make sure its CLI is available.")
 
 
+def find_veracrypt_format() -> Path:
+    """Volume creation on Windows is handled by "VeraCrypt Format.exe", not VeraCrypt.exe."""
+    vc = find_veracrypt()
+    if os.name != "nt":
+        return vc
+    candidates = [
+        vc.parent / "VeraCrypt Format.exe",
+        Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "VeraCrypt" / "VeraCrypt Format.exe",
+        Path(os.environ.get("ProgramFiles(x86)", "C:/Program Files (x86)")) / "VeraCrypt" / "VeraCrypt Format.exe",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    raise DewError("VeraCrypt Format.exe was not found. Reinstall VeraCrypt to create containers on Windows.")
+
+
 
 
 def find_docker() -> Path:
@@ -363,7 +379,58 @@ def pull_dew_drive(registry_ref: str, output_dir: Path) -> Path:
     return output_dir / "dew-drive"
 
 
+def log_step(message: str) -> None:
+    """Aggressive diagnostic logging: goes to stderr so GUIs relay it without polluting stdout."""
+    print(f"[dew] {message}", file=sys.stderr, flush=True)
+
+
+def redact_command(cmd: list[str]) -> str:
+    """Render a command for error messages with password/PIM values masked."""
+    redacted: list[str] = []
+    hide_next = False
+    for part in cmd:
+        if hide_next:
+            redacted.append("****")
+            hide_next = False
+            continue
+        lowered = part.lower()
+        if lowered in {"/password", "--password", "/pim", "--pim"}:
+            redacted.append(part)
+            hide_next = True
+            continue
+        if lowered.startswith("-p") and not lowered.startswith("--") and len(part) > 2:
+            redacted.append("-p****")
+            continue
+        redacted.append(part)
+    return " ".join(redacted)
+
+
+def command_passwords(cmd: list[str]) -> list[str]:
+    passwords: list[str] = []
+    take_next = False
+    for part in cmd:
+        if take_next:
+            passwords.append(part)
+            take_next = False
+            continue
+        lowered = part.lower()
+        if lowered in {"/password", "--password"}:
+            take_next = True
+            continue
+        if lowered.startswith("-p") and not lowered.startswith("--") and len(part) > 2:
+            passwords.append(part[2:])
+    return [password for password in passwords if len(password) >= 4]
+
+
+def redact_output(text: str, cmd: list[str]) -> str:
+    for password in command_passwords(cmd):
+        text = text.replace(password, "****")
+    return text
+
+
 def run(cmd: list[str], cwd: Path | None = None) -> str:
+    log_step(f"run: {redact_command(cmd)}" + (f" (cwd {cwd})" if cwd else ""))
+    started = time.monotonic()
     proc = subprocess.run(
         cmd,
         cwd=str(cwd) if cwd else None,
@@ -372,12 +439,15 @@ def run(cmd: list[str], cwd: Path | None = None) -> str:
         stderr=subprocess.STDOUT,
         check=False,
     )
+    log_step(f"exit {proc.returncode} after {time.monotonic() - started:.1f}s: {Path(cmd[0]).name}")
     if proc.returncode != 0:
-        raise DewError(f"Command failed ({proc.returncode}): {' '.join(cmd)}\n{proc.stdout}")
+        raise DewError(f"Command failed ({proc.returncode}): {redact_command(cmd)}\n{redact_output(proc.stdout, cmd)}")
     return proc.stdout.strip()
 
 
 def run_bytes(cmd: list[str], cwd: Path | None = None) -> bytes:
+    log_step(f"run: {redact_command(cmd)}" + (f" (cwd {cwd})" if cwd else ""))
+    started = time.monotonic()
     proc = subprocess.run(
         cmd,
         cwd=str(cwd) if cwd else None,
@@ -385,9 +455,10 @@ def run_bytes(cmd: list[str], cwd: Path | None = None) -> bytes:
         stderr=subprocess.PIPE,
         check=False,
     )
+    log_step(f"exit {proc.returncode} after {time.monotonic() - started:.1f}s: {Path(cmd[0]).name}")
     if proc.returncode != 0:
         output = proc.stderr.decode(errors="replace")
-        raise DewError(f"Command failed ({proc.returncode}): {' '.join(cmd)}\n{output}")
+        raise DewError(f"Command failed ({proc.returncode}): {redact_command(cmd)}\n{redact_output(output, cmd)}")
     return proc.stdout
 
 
@@ -624,6 +695,15 @@ def free_windows_drive_letter() -> str:
     raise DewError("No free drive letter is available for VeraCrypt.")
 
 
+def wait_for_windows_mount(mount_root: Path, attempts: int = 10, delay: float = 0.5) -> bool:
+    """VeraCrypt /silent exits 0 even when the mount failed (e.g. wrong password), so poll the drive."""
+    for _ in range(attempts):
+        if mount_root.exists():
+            return True
+        time.sleep(delay)
+    return False
+
+
 def copy_into_mount(source: Path, mount_root: Path) -> None:
     target = mount_root / source.name
     if source.is_dir():
@@ -674,20 +754,34 @@ def veracrypt_create_container(
     if container.exists():
         raise DewError(f"Container already exists: {container}")
     size = estimated_container_size(source, settings)
+    log_step(f"veracrypt create: container {container} size {size} fs {settings.filesystem} via {vc}")
 
     if os.name == "nt":
+        # "VeraCrypt Format.exe" rejects the VeraCrypt.exe-only /quit switch: with /silent the
+        # suppressed parse-error dialog makes it hang forever, so never pass /quit here.
         run([
-            str(vc), "/create", str(container), "/size", size, "/password", password,
+            str(find_veracrypt_format()), "/create", str(container), "/size", size, "/password", password,
             "/encryption", settings.encryption, "/hash", settings.hash, "/filesystem", settings.filesystem,
-            "/pim", settings.pim, "/silent", "/force", "/quit",
+            "/pim", settings.pim, "/silent", "/force",
         ])
+        log_step(f"veracrypt container created: {container}")
         letter = free_windows_drive_letter()
+        log_step(f"veracrypt mount: {container} -> {letter}:")
+        mounted = False
         try:
             run([str(vc), "/volume", str(container), "/letter", letter, "/password", password, "/pim", settings.pim, "/silent", "/quit"])
             mount_root = Path(f"{letter}:\\")
+            mounted = wait_for_windows_mount(mount_root)
+            if not mounted:
+                raise DewError(f"VeraCrypt did not mount {container} on {letter}: - wrong password or PIM, or the container is damaged.")
+            log_step(f"copying {source} into {mount_root}")
             copy_into_mount(source, mount_root)
         finally:
-            run([str(vc), "/dismount", letter, "/silent", "/quit"])
+            if mounted:
+                log_step(f"veracrypt dismount: {letter}:")
+                run([str(vc), "/dismount", letter, "/silent", "/quit"])
+            else:
+                log_step(f"skipping dismount: {letter}: never mounted")
     else:
         random_source = source if source.is_file() else next((p for p in source.rglob("*") if p.is_file()), source)
         run([
@@ -728,11 +822,21 @@ def veracrypt_decrypt_container(
 
     if os.name == "nt":
         letter = free_windows_drive_letter()
+        log_step(f"veracrypt mount: {container} -> {letter}:")
+        mounted = False
         try:
             run([str(vc), "/volume", str(container), "/letter", letter, "/password", password, "/pim", settings.pim, "/silent", "/quit"])
-            copy_from_mount(Path(f"{letter}:\\"), output)
+            mount_root = Path(f"{letter}:\\")
+            mounted = wait_for_windows_mount(mount_root)
+            if not mounted:
+                raise DewError(f"VeraCrypt did not mount {container} on {letter}: - wrong password or PIM, or the container is damaged.")
+            copy_from_mount(mount_root, output)
         finally:
-            run([str(vc), "/dismount", letter, "/silent", "/quit"])
+            if mounted:
+                log_step(f"veracrypt dismount: {letter}:")
+                run([str(vc), "/dismount", letter, "/silent", "/quit"])
+            else:
+                log_step(f"skipping dismount: {letter}: never mounted")
     else:
         with tempfile.TemporaryDirectory(prefix="dew-vc-mount-") as mount_dir:
             mount_root = Path(mount_dir)
@@ -1084,6 +1188,7 @@ def copy_dew_drive_selection(source: Path, staging: Path, profile: DewDriveProfi
 
 def encrypt_dew_drive_staging(staging: Path, output_dir: Path, password: str, mode: str) -> Path:
     mode = mode.lower()
+    log_step(f"encrypt staging: mode {mode}, staging {staging}")
     if mode in {"7z", "7zip", "archive", "password", "standard"}:
         seven_zip = find_executable(
             "7z",
@@ -1699,6 +1804,8 @@ def watch(paths: list[Path], interval: float = 5.0, once: bool = False) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    log_step(f"dew-encryption start: args {redact_command(argv)}")
+    log_step(f"config: {config_file()}")
     if argv and argv[0] == "buildable-source":
         parser = argparse.ArgumentParser(prog="dew-encryption buildable-source", description="Create a self-contained encrypted source GUI manager.")
         subparsers = parser.add_subparsers(dest="command", required=True)
