@@ -263,6 +263,7 @@ The C# GUI `Dew Drive` tab is the OneDrive-style workflow:
 
 1. Pick or create a local stream folder.
 2. Enter an upload image tag such as `ghcr.io/you/dew-drive:latest`. This is the Docker/OCI registry target, not a `Dockerfile`.
+   For Docker Hub, use the `Docker Hub` helper row instead: type your Docker Hub username (repository and tag are optional) and click `Use Docker Hub` to fill the tag as `docker.io/you/dew-drive:latest`. Run `docker login` once so `Push` can upload.
 3. Choose `veracrypt` encryption and enter the sync password.
 4. Save your VeraCrypt settings or use `Install VeraCrypt`.
 5. Use `Auto Sync` to watch local file changes, encrypt the folder, build the Docker image, and push it.

@@ -38,9 +38,10 @@ Wait ~4s, then `list_headless_windows` → find the "Dew Encryption" window hwnd
 - `mouse_click {hwnd, x, y}` — background PostMessage clicks work on Avalonia (tabs, buttons, list
   items, textboxes).
 - `type_text {hwnd, text}` — WM_CHAR typing works after clicking a TextBox to focus it.
-- Window is 1180x780 logical (1770x1170 physical at 150% DPI). Long status text can clip at that
-  height; to enlarge, run SetWindowPos *from the headless desktop* (cross-desktop SetWindowPos and
-  `resize_window` fail):
+- Window is 1180x840 logical (1770x1260 physical at 150% DPI); the Dew Drive right panel scrolls.
+  Background typing into a just-clicked TextBox can race Avalonia focus — if typed text vanishes,
+  re-click and retype, or seed values via the settings JSON instead. To enlarge the window, run
+  SetWindowPos *from the headless desktop* (cross-desktop SetWindowPos and `resize_window` fail):
   `launch_on_headless_desktop` with a `powershell.exe -NoProfile -Command "Add-Type ... SetWindowPos(...)"` one-liner.
 - The GUI's CLI calls fall back to `python -m dew_encryption.core` (repo root) and inherit
   `DEW_ENCRYPTION_CONFIG`; a real `dew-drive sync` on a scratch profile succeeds on this machine

@@ -3,7 +3,7 @@
         x:Class="DewEncryption.Gui.MainWindow"
         Title="Dew Encryption"
         Width="1180"
-        Height="780"
+        Height="840"
         MinWidth="980"
         MinHeight="640">
   <Grid RowDefinitions="Auto,*,Auto" Margin="18">
@@ -101,11 +101,12 @@
           </Border>
 
           <Border Classes="panel" Grid.Column="1">
-            <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto">
               <TextBlock Text="Stream Folder" Classes="sectionTitle" />
               <UniformGrid Grid.Row="1" Columns="2" Rows="2">
                 <TextBox Watermark="Drive name" x:Name="DriveNameBox" Margin="0,8,8,8" />
-                <TextBox Watermark="Upload image tag" x:Name="DriveRegistryImageBox" ToolTip.Tip="Docker/OCI image tag, for example docker.io/your-name/dew-drive:latest. This is the upload target, not a Dockerfile." Margin="0,8,0,8" />
+                <TextBox Watermark="Upload image tag" x:Name="DriveRegistryImageBox" ToolTip.Tip="Docker/OCI image tag, for example docker.io/your-name/dew-drive:latest. Use the Docker Hub row below to build one." Margin="0,8,0,8" />
                 <TextBox Watermark="Local stream folder" x:Name="DriveFolderBox" Margin="0,0,8,8" />
                 <TextBox Watermark="Restore commit" x:Name="DriveCommitBox" Text="HEAD" Margin="0,0,0,8" />
               </UniformGrid>
@@ -117,8 +118,16 @@
                 <Button Content="Add Folder" Classes="outline" Click="AddDriveFolder_Click" />
               </StackPanel>
 
-              <TextBlock Grid.Row="3" Text="Encryption" Classes="sectionTitle" Margin="0,2,0,8" />
-              <UniformGrid Grid.Row="4" Columns="4" Rows="2">
+              <WrapPanel Grid.Row="3" Margin="0,0,0,12">
+                <TextBlock Text="Docker Hub" Classes="label" VerticalAlignment="Center" Margin="0,0,10,0" />
+                <TextBox x:Name="DockerHubUserBox" Watermark="Docker Hub username" Width="210" Margin="0,0,8,0" />
+                <TextBox x:Name="DockerHubRepoBox" Watermark="Repository (dew-drive)" Width="190" Margin="0,0,8,0" />
+                <TextBox x:Name="DockerHubTagBox" Watermark="Tag" Text="latest" Width="110" Margin="0,0,8,0" />
+                <Button Content="Use Docker Hub" Classes="tonal" Click="UseDockerHub_Click" ToolTip.Tip="Fill the upload image tag with docker.io/username/repository:tag." />
+              </WrapPanel>
+
+              <TextBlock Grid.Row="4" Text="Encryption" Classes="sectionTitle" Margin="0,2,0,8" />
+              <UniformGrid Grid.Row="5" Columns="4" Rows="2">
                 <ComboBox x:Name="DriveEncryptionModeBox" SelectedIndex="1" Margin="0,0,8,8">
                   <ComboBoxItem Content="7zip" />
                   <ComboBoxItem Content="veracrypt" />
@@ -134,7 +143,7 @@
                   <CheckBox x:Name="DriveStartAtLoginBox" Content="Startup" ToolTip.Tip="Start Dew Drive auto-sync when this Windows user signs in." Click="DriveStartAtLogin_Click" />
                 </StackPanel>
               </UniformGrid>
-              <WrapPanel Grid.Row="5" Margin="0,0,0,12">
+              <WrapPanel Grid.Row="6" Margin="0,0,0,12">
                 <Button Content="Install VC" Classes="tonal" Click="InstallVeraCrypt_Click" />
                 <Button Content="Save VC Settings" Classes="outline" Click="SaveVeraCryptSettings_Click" />
                 <Button Content="Auto Sync" Classes="primary" Click="StartDriveAutoSync_Click" />
@@ -144,9 +153,10 @@
                 <Button Content="Pull" Classes="secondary" Click="PullDrive_Click" />
                 <Button Content="Restore" Classes="outline" Click="RestoreDrive_Click" />
               </WrapPanel>
-              <TextBlock Grid.Row="6" x:Name="DriveStatusText" Classes="muted" TextWrapping="Wrap" />
+              <TextBlock Grid.Row="7" x:Name="DriveStatusText" Classes="muted" TextWrapping="Wrap" />
               <TextBox x:Name="DriveItemsBox" IsVisible="False" />
             </Grid>
+            </ScrollViewer>
           </Border>
         </Grid>
       </TabItem>

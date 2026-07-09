@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Text.RegularExpressions;
 using Avalonia.Threading;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
@@ -9,6 +10,11 @@ namespace DewEncryption.Gui;
 
 public sealed partial class MainWindow : Window
 {
+    private static readonly Regex DockerNamespacePattern = new("^[a-z0-9]+(?:[._-][a-z0-9]+)*$");
+    private static readonly Regex DockerTagPattern = new("^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$");
+    private static readonly Regex DockerHubReferencePattern = new(
+        "^(?:docker\\.io|index\\.docker\\.io|registry-1\\.docker\\.io)/(?<user>[a-z0-9]+(?:[._-][a-z0-9]+)*)/(?<repo>[a-z0-9]+(?:[._-][a-z0-9]+)*)(?::(?<tag>[A-Za-z0-9_][A-Za-z0-9._-]{0,127}))?$");
+
     private readonly DewCliService cliService = new();
     private readonly DewDriveService driveService = new();
     private readonly DewSelectionService selectionService = new();
@@ -347,6 +353,66 @@ public sealed partial class MainWindow : Window
         Log($"Deleted Dew Drive profile: {DriveLabel(removed)} (local folder kept on disk)");
     }
 
+    private void UseDockerHub_Click(object? sender, RoutedEventArgs e)
+    {
+        string user = DockerHubUserBox.Text?.Trim().ToLowerInvariant() ?? string.Empty;
+        string repo = DockerHubRepoBox.Text?.Trim().ToLowerInvariant() ?? string.Empty;
+        string tag = DockerHubTagBox.Text?.Trim() ?? string.Empty;
+        if (repo.Length == 0)
+        {
+            repo = "dew-drive";
+        }
+
+        if (tag.Length == 0)
+        {
+            tag = "latest";
+        }
+
+        if (!DockerNamespacePattern.IsMatch(user))
+        {
+            SetStatus("Docker Hub username needed.");
+            Log("Enter your Docker Hub username (lowercase letters and digits, with . _ - separators) to build an upload tag.");
+            return;
+        }
+
+        if (!DockerNamespacePattern.IsMatch(repo))
+        {
+            SetStatus("Repository name invalid.");
+            Log("Docker Hub repository names use lowercase letters and digits with . _ - separators.");
+            return;
+        }
+
+        if (!DockerTagPattern.IsMatch(tag))
+        {
+            SetStatus("Tag invalid.");
+            Log("Docker tags use letters, digits, and . _ - (up to 128 characters).");
+            return;
+        }
+
+        string reference = $"docker.io/{user}/{repo}:{tag}";
+        DriveRegistryImageBox.Text = reference;
+        DockerHubUserBox.Text = user;
+        DockerHubRepoBox.Text = repo;
+        DockerHubTagBox.Text = tag;
+        DriveStatusText.Text = $"Upload tag set: {reference}";
+        SetStatus("Docker Hub tag ready.");
+        Log($"Docker Hub upload tag set: {reference}");
+        Log("Run 'docker login' once with this Docker Hub account so Push can upload.");
+    }
+
+    private void FillDockerHubHelperFromReference(string reference)
+    {
+        Match match = DockerHubReferencePattern.Match(reference.Trim());
+        if (!match.Success)
+        {
+            return;
+        }
+
+        DockerHubUserBox.Text = match.Groups["user"].Value;
+        DockerHubRepoBox.Text = match.Groups["repo"].Value;
+        DockerHubTagBox.Text = match.Groups["tag"].Success && match.Groups["tag"].Value.Length > 0 ? match.Groups["tag"].Value : "latest";
+    }
+
     private async void PickDriveFolder_Click(object? sender, RoutedEventArgs e)
     {
         IReadOnlyList<IStorageFolder> folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
@@ -567,6 +633,7 @@ public sealed partial class MainWindow : Window
         DriveNameBox.Text = profile.Name;
         DriveFolderBox.Text = DriveFolder(profile);
         DriveRegistryImageBox.Text = DriveRegistry(profile);
+        FillDockerHubHelperFromReference(DriveRegistry(profile));
         SetDriveEncryptionMode(profile.EncryptionMode);
         DriveAutoPushBox.IsChecked = profile.AutoPush;
         DrivePasswordBox.Text = string.Empty;
