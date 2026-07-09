@@ -430,13 +430,14 @@ def redact_output(text: str, cmd: list[str]) -> str:
     return text
 
 
-def run(cmd: list[str], cwd: Path | None = None) -> str:
+def run(cmd: list[str], cwd: Path | None = None, input_text: str | None = None) -> str:
     log_step(f"run: {redact_command(cmd)}" + (f" (cwd {cwd})" if cwd else ""))
     started = time.monotonic()
     proc = subprocess.run(
         cmd,
         cwd=str(cwd) if cwd else None,
         text=True,
+        input=input_text,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         check=False,
@@ -956,7 +957,13 @@ def decrypt_dew_drive_payload(payload: Path, password: str, output: Path, metada
         ],
     )
     output.mkdir(parents=True, exist_ok=True)
-    run([str(seven_zip), "x", "-y", f"-p{password}", f"-o{output}", str(payload)])
+    if os.name == "nt" and '"' in password:
+        # 7-Zip's Windows command-line splitter treats every quote as a delimiter toggle, so a
+        # -p value containing " reaches 7-Zip with the wrong bytes; its console prompt takes the
+        # password verbatim from stdin instead.
+        run([str(seven_zip), "x", "-y", f"-o{output}", str(payload)], input_text=password + "\n")
+    else:
+        run([str(seven_zip), "x", "-y", f"-p{password}", f"-o{output}", str(payload)])
     return output
 
 
@@ -1239,7 +1246,12 @@ def encrypt_dew_drive_staging(staging: Path, output_dir: Path, password: str, mo
         )
         payload = output_dir / DEW_DRIVE_PAYLOAD_NAME
         items = [str(item) for item in staging.iterdir()]
-        run([str(seven_zip), "a", "-t7z", "-mx=9", f"-p{password}", "-mhe=on", str(payload), *items])
+        if os.name == "nt" and '"' in password:
+            # See decrypt_dew_drive_payload: quotes cannot ride in -p on Windows, so let the
+            # bare -p switch trigger 7-Zip's console prompt and feed the password verbatim.
+            run([str(seven_zip), "a", "-t7z", "-mx=9", "-p", "-mhe=on", str(payload), *items], input_text=password + "\n")
+        else:
+            run([str(seven_zip), "a", "-t7z", "-mx=9", f"-p{password}", "-mhe=on", str(payload), *items])
         return payload
     if mode in {"veracrypt", "vera", "vc"}:
         container_source = output_dir / "payload-source"
