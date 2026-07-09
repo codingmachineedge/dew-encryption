@@ -11,7 +11,8 @@
 
 1. Use `installer/install.ps1` for automated local install.
 2. Use `scripts/build-windows-installer.ps1` to build the Inno Setup installer.
-3. Use the release workflow for tagged release artifacts.
+3. Every branch push runs the installer workflow and publishes a commit-specific installer artifact for 30 days.
+4. Use the release workflow for manual builds and tagged release artifacts.
 
 ## Linux install
 
