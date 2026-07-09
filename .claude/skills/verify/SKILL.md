@@ -58,6 +58,16 @@ returned by `launch_on_headless_desktop`, `Stop-Process` it, then `close_headles
   don't toggle it during tests (it writes the user's registry).
 - `RefreshDriveList()` reloads settings from disk and resets list selection.
 
+## Dew Drive registry round trips
+
+`dew-drive pull` starts with `docker pull`, so a local-only tag fails — run a throwaway registry
+(`docker run -d --name dew-verify-registry -p 5111:5000 registry:2`), point profiles at
+`localhost:5111/...`, sync with `--push`, `docker rmi` the local tag, then pull. Password via
+`DEW_DRIVE_PASSWORD`; profiles seed from the scratch settings (`dew_drives.drives[]` with
+`local_path`, `registry_ref`, `encryption_mode`). Both CLI flows run headless (no GUI needed);
+VeraCrypt mode briefly mounts a real drive letter. Clean up the registry container and
+`registry:2` image afterwards.
+
 ## VeraCrypt testing gotchas
 
 - **Git Bash mangles `/switch` args** (MSYS path conversion) — any direct VeraCrypt/Format run from
