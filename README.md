@@ -8,7 +8,9 @@ It also includes a modern GUI file manager for selecting files, managing file hi
 
 ![Dew Encryption Logo](assets/icons/dew-main.png)
 
-![Dew Encryption GUI showing the Containers manager with themes, hooks, and history](docs/screenshots/gui.svg)
+![Dew Encryption Material Design GUI showing the Dew Drive stream folder tab](docs/screenshots/gui-material-dew-drive.png)
+
+![Dew Encryption Material Design GUI showing the Files tab](docs/screenshots/gui-material-files.png)
 
 ![Explorer menu mockup showing history and container quick-create actions](docs/screenshots/explorer-menu.svg)
 
@@ -179,7 +181,7 @@ The generated manager requires Python, Git, and 7-Zip on the target machine. Kee
 
 ## C# GUI Target
 
-The `csharp/DewEncryption.Gui` project is an Avalonia/.NET 8 desktop shell for Windows and Linux. It drives the existing `dew-encryption` CLI so the C# interface can share the mature encryption, Git history, VeraCrypt, and hook workflows while the native UI is expanded.
+The `csharp/DewEncryption.Gui` project is an Avalonia/.NET 8 desktop shell for Windows and Linux. It uses Material Design (Material.Avalonia theme, cards, floating-label fields, and Material icons) with a teal palette, and it drives the existing `dew-encryption` CLI so the C# interface can share the mature encryption, Git history, VeraCrypt, and hook workflows while the native UI is expanded. Rarely-needed VeraCrypt internals sit behind an "Advanced VeraCrypt settings" expander so the common sync flow stays simple.
 
 ```bash
 dotnet restore csharp/DewEncryption.Gui/DewEncryption.Gui.csproj

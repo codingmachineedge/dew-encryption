@@ -3,7 +3,7 @@
 This folder contains the C# targets for Dew Encryption:
 
 - `DewEncryption.Core`: a .NET 8 class library that centralizes the reusable application model, path selection, container profile data, and process/CLI orchestration for the full app workflows.
-- `DewEncryption.Gui`: an Avalonia desktop shell for Windows and Linux that references the core library while reusing the existing `dew-encryption` Python CLI for encryption, Git history, VeraCrypt, and hook execution workflows.
+- `DewEncryption.Gui`: an Avalonia desktop shell for Windows and Linux that references the core library while reusing the existing `dew-encryption` Python CLI for encryption, Git history, VeraCrypt, and hook execution workflows. The UI follows Material Design via the Material.Avalonia theme: a teal top app bar, icon tabs, elevated cards, floating-label text fields with a password reveal toggle, and advanced VeraCrypt options tucked into an expander.
 
 ## Build locally
 
